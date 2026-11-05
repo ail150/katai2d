@@ -1,0 +1,28 @@
+[Unit]
+Description=KATAI 2D owner web service
+After=network.target
+
+[Service]
+Type=simple
+User=katai
+Group=katai
+WorkingDirectory=/opt/katai2d/web/server
+EnvironmentFile=/etc/katai-web.env
+ExecStart=/opt/katai2d/.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000 --workers 1
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/katai-web
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

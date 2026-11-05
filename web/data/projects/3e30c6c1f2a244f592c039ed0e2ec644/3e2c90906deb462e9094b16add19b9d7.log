@@ -1,0 +1,10 @@
+phase 1/2: Initial phase
+phase 2/2: Indentation
+phase 1/2: ok  max|u| = 0.000000e+00 m
+  converged: force error 3.452e-15 of 1.000e-06 tolerated
+             stiffness-weighted force error 1.726e-15 (reported, not the stopping test)
+phase 2/2: ok  max|u| = 5.000000e-02 m
+  converged: force error 1.616e-14 of 1.000e-06 tolerated, stiffness parameter 0.070
+             stiffness-weighted force error 1.510e-14 (reported, not the stopping test)
+solved 2 phase(s) in 1.56 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/3e30c6c1f2a244f592c039ed0e2ec644/3e2c90906deb462e9094b16add19b9d7.res

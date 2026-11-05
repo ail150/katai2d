@@ -1,0 +1,15 @@
+phase 1/2: Initial phase
+phase 2/2: Flexible footing load
+phase 1/2: ok  max|u| = 0.000000e+00 m
+  converged: force error 4.009e-15 of 1.000e-06 tolerated
+             stiffness-weighted force error 2.005e-15 (reported, not the stopping test)
+phase 2/2: ok  max|u| = 4.517205e-02 m
+  converged: force error 5.161e-04 of 1.000e-06 tolerated, stiffness parameter 0.066, moment error 6.124e-13
+             stiffness-weighted force error 3.911e-04 (reported, not the stopping test)
+  note    1066 of 1090 yielding stress points carry a LOCAL error above the same tolerance (worst 3.04e-02).
+          The force balance is met; the stresses at those points are not yet the ones
+          the material law returns for their strains. Tighten the phase's tolerated error to close it.
+  note    K2D-A004  A structural element ends on a supported node. The reported reactions are the soil's contribution only; the element's own end force at that support is not included in this build. Read it from the element's own force diagram.
+  warning K2D-A019  5 increment(s) stopped converging before the phase's tolerance and were kept at their best iterate, with an out-of-balance force of up to 6.97e-04 of the load scale. The answer carries that much unbalanced force. Re-run with a finer or coarser mesh, or more load steps, to see whether it moves.
+solved 2 phase(s) in 14.80 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/a05470ecbfb14274988b2ede12caecf8/9f1a64fd14bb47c689dcd05214b3a819.res

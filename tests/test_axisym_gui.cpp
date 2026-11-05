@@ -52,6 +52,7 @@ void test_axisym_k0_cylinder() {
     const auto M = katai::app::mesh_from_project(pr, 0.5, 6);
     check(M.ok, "axisym K0 cylinder meshed");
     const auto Rk = katai::app::solve_gravity_le(pr, M.mesh, InitialPhase::K0Procedure);
+    if (!Rk.ok) std::printf("  K0 failure: %s\n", Rk.message.c_str());
     check(Rk.ok, "axisym K0 solve ok");
     double max_sv = 0.0, max_sh = 0.0;
     for (int n = 0; n < M.mesh.node_count; ++n) {

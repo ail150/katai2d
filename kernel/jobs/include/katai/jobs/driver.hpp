@@ -199,6 +199,9 @@ struct PhaseIO {
     // for what was already imposed there: a prescribed displacement active in both holds its nodes
     // where the parent left them instead of being imposed a second time. Null = no parent.
     const model::Phase* parent_config = nullptr;
+    std::function<void(int, double, const Eigen::VectorXd&,
+                       const std::vector<katai::core::GaussState>&,
+                       const std::vector<char>&, double, int)> on_increment;
 };
 
 // The construction seam between the project schema and the constitutive
@@ -263,6 +266,9 @@ SolveResult solve_gravity_le(const model::Project& pr, const katai::mesh::Mesh& 
 // the COMPLETED prefix is returned -- cooperative cancellation: a running phase is never
 // interrupted. The Job object (katai/jobs/job.hpp) is the intended consumer.
 using PhaseProgress = std::function<void(int, int, const std::string&)>;
+using IncrementProgress = std::function<void(
+    int, const std::string&, int, double, const Eigen::VectorXd&,
+    const std::vector<katai::core::GaussState>&, const std::vector<char>&, double, int)>;
 // `numeric` overrides the numerical controls of EVERY phase in the run (zero fields keep the
 // driver's material-class defaults, so an omitted argument reproduces previous runs exactly). It
 // exists so that a study can ask whether a published number depends on its stopping rule --
@@ -272,6 +278,7 @@ std::vector<SolveResult> solve_phases(const model::Project& pr,
                                       InitialPhase init_phase = InitialPhase::K0Procedure,
                                       const PhaseProgress& on_phase = {},
                                       const std::function<bool()>& cancelled = {},
-                                      const NumericalControls& numeric = {});
+                                      const NumericalControls& numeric = {},
+                                      const IncrementProgress& on_increment = {});
 
 } // namespace katai::app

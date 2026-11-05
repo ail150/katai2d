@@ -24,6 +24,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <thread>
 #include <vector>
@@ -97,6 +98,71 @@ void test_progress_and_timings() {
     check(sum > 0.0, "the run took measurable time");
 }
 
+// ----------------------------------------------------- committed increment monitor --
+void test_increment_monitor() {
+    std::printf("-- committed increment monitor resolves a nearby node --\n");
+    jobs::Job job(load_corpus("kv-fnd-008-strip-load.k2d"));
+    job.set_monitor_point(1.23, 0.17);
+    std::vector<jobs::IncrementSample> seen;
+    job.set_on_increment([&seen](const jobs::IncrementSample& sample) { seen.push_back(sample); });
+    check(job.run(), "monitored job ran");
+    check(!seen.empty(), "at least one committed solver increment was reported");
+    if (seen.empty()) return;
+    const auto& mesh = job.mesh().mesh;
+    const auto& sample = seen.back();
+    size_t nearest = 0;
+    double nearest_d2 = std::numeric_limits<double>::infinity();
+    for (size_t i = 0; i < mesh.x.size(); ++i) {
+        const double dx = mesh.x[i] - 1.23;
+        const double dy = mesh.y[i] - 0.17;
+        if (dx * dx + dy * dy < nearest_d2) { nearest = i; nearest_d2 = dx * dx + dy * dy; }
+    }
+    check(sample.node_index == nearest, "monitor resolves to nearest mesh node");
+    check(sample.x == mesh.x[nearest] && sample.y == mesh.y[nearest],
+          "sample reports resolved node coordinates");
+    check(std::isfinite(sample.displacement) && std::isfinite(sample.sigma_magnitude) &&
+              std::isfinite(sample.force_error),
+          "sample has finite displacement, stress and residual");
+    check(sample.iterations > 0 && sample.load_factor > 0.0,
+          "sample includes accepted load factor and iteration count");
+}
+
+void test_auto_refine_mesh() {
+    std::printf("-- auto-refine creates a finer zone around the strip load --\n");
+    m::Project refined_project = load_corpus("kv-fnd-008-strip-load.k2d");
+    refined_project.mesh.elem_size = 1.0;
+    refined_project.mesh.auto_refine = true;
+    const auto refined = katai::app::mesh_from_project(refined_project);
+    check(refined.ok, "locally refined mesh generated");
+    if (!refined.ok) return;
+    const auto& mesh = refined.mesh;
+    double near_area = 0.0, far_area = 0.0;
+    size_t near_count = 0, far_count = 0;
+    for (int e = 0; e < mesh.element_count; ++e) {
+        const auto base = static_cast<size_t>(e) * mesh.nodes_per_element;
+        const int ia = mesh.connectivity[base], ib = mesh.connectivity[base + 1], ic = mesh.connectivity[base + 2];
+        const double ax = mesh.x[ia], ay = mesh.y[ia], bx = mesh.x[ib], by = mesh.y[ib], cx = mesh.x[ic], cy = mesh.y[ic];
+        const double area = 0.5 * std::abs((bx - ax) * (cy - ay) - (by - ay) * (cx - ax));
+        const double x = (ax + bx + cx) / 3.0, y = (ay + by + cy) / 3.0;
+        const double distance = std::hypot(std::max(18.0 - x, std::max(0.0, x - 22.0)), y - 20.0);
+        if (distance <= 1.0) { near_area += area; ++near_count; }
+        if (distance >= 3.0) { far_area += area; ++far_count; }
+    }
+    check(near_count > 0 && far_count > 0, "mesh has elements near and far from the load");
+    if (near_count && far_count)
+        check(near_area / near_count < far_area / far_count,
+              "mean element area is smaller next to the load");
+    refined_project.mesh.auto_refine = false;
+    const auto uniform = katai::app::mesh_from_project(refined_project);
+    check(uniform.ok && uniform.mesh.node_count < mesh.node_count,
+          "turning off local refinement removes load-zone mesh density");
+    refined_project.loads.clear();
+    refined_project.mesh.auto_refine = true;
+    const auto no_load = katai::app::mesh_from_project(refined_project);
+    check(no_load.ok && no_load.mesh.element_count > 0,
+          "automatic mesh remains valid when the model has no loads");
+}
+
 // ------------------------------------------------------------------ (3) cancellation --
 void test_cancellation() {
     std::printf("-- cooperative cancellation at a phase boundary (kv-exc-001) --\n");
@@ -166,6 +232,8 @@ int main() {
     std::printf("The job object: headless runs with progress, cancellation, timings\n\n");
     test_equivalence();
     test_progress_and_timings();
+    test_increment_monitor();
+    test_auto_refine_mesh();
     test_cancellation();
     test_validation_refusal();
     test_concurrency();

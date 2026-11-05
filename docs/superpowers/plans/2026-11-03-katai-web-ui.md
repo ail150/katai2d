@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox syntax for tracking.
 
-**Goal:** Deliver PLAXIS-inspired Input and Output web shells backed by KATAI, buildable on Ubuntu 24.04 x86_64, with both Tutorial 1 footing variants calculable.
+**Goal:** Deliver engineering Input and Output web shells backed by KATAI, buildable on Ubuntu 24.04 x86_64, with both Tutorial 1 footing variants calculable.
 
 **Architecture:** A React/TypeScript single-origin browser app talks to a FastAPI service. The service persists canonical `.k2d` projects and launches `katai` as a per-job subprocess; the CLI owns validation, meshing, solving, and `.res` decoding. Caddy serves HTTPS and protects the single-owner app.
 
@@ -15,7 +15,7 @@
 - Ubuntu 24.04 x86_64 is the supported Linux deployment target; use GCC and the Eigen backend, retaining Windows support.
 - The engine remains the sole source of numerical results; do not reimplement validation, meshing, or solving in the web stack.
 - Preserve `.k2d` and `.res` version/hash checks; never display stale or corrupt results as current.
-- Cover every KATAI project field and supported result family; PLAXIS-only unsupported capabilities are out of scope.
+- Cover every KATAI project field and supported result family; unsupported capabilities are out of scope.
 - Single owner, private server-side project storage, HTTPS, no public registration, desktop-first layout.
 - Keep all user actions real: no placeholder toolbar buttons or silent field loss.
 
@@ -62,7 +62,7 @@
 - [ ] Use argument arrays (never shell interpolation), validate before solve, preserve stdout/stderr and phase progress, and mark interrupted jobs honestly.
 - [ ] Run server tests with a fake CLI, then integration tests against the built KATAI binary.
 
-### Task 4: PLAXIS-inspired Input and Output shells
+### Task 4: Input and Output shells
 
 **Files:** `studio/web/`, `studio/web/tests/`.
 
@@ -80,7 +80,7 @@
 
 **Interfaces:** Tutorial 1 acceptance covers the rigid indentation and flexible plate/load models from a blank UI project through results. Deployment uses systemd for the API and Caddy for HTTPS/reverse proxy.
 
-- [ ] Add browser-driven acceptance tests that draw, validate, mesh, calculate, and inspect both variants; compare the axisymmetric total reaction/load scale with the manual's approximately 588–590 kN reference.
+- [ ] Add browser-driven acceptance tests that draw, validate, mesh, calculate, and inspect both variants; compare the axisymmetric total reaction/load scale with the approximately 588–590 kN reference.
 - [ ] Add a same-origin production-serving smoke test and verify project/result persistence, auth, refusal messaging, and interrupted worker recovery.
 - [ ] Add Ubuntu service/Caddy configuration and environment documentation for domain, password, data directory, and CLI path.
 - [ ] Run full verification: Linux CTest, server tests, frontend tests/build, both browser acceptance calculations, and deployment configuration checks.

@@ -2,6 +2,12 @@
 /build/
 /out/
 /dist/
+/web/client/node_modules/
+/web/client/dist/
+/web/server/.venv/
+/web/client/test-results/
+/web/client/playwright-report/
+/web/client/*.tsbuildinfo
 
 # Working notes (formulation and validation prose, environment and decision
 # journals) stay out of the tracked tree; they feed the project website

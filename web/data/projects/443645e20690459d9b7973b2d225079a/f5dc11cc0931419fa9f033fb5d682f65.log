@@ -1,0 +1,11 @@
+phase 1/2: Initial phase
+phase 2/2: Excavate 6.5m
+phase 1/2: ok  max|u| = 0.000000e+00 m
+  converged: force error 3.799e-15 of 1.000e-06 tolerated
+             stiffness-weighted force error 1.900e-15 (reported, not the stopping test)
+phase 2/2: ok  max|u| = 3.977870e-03 m
+  converged: force error 1.468e-13 of 1.000e-06 tolerated, stiffness parameter 0.577, moment error 2.494e-15
+             stiffness-weighted force error 1.267e-13 (reported, not the stopping test)
+  note    K2D-A004  A structural element ends on a supported node. The reported reactions are the soil's contribution only; the element's own end force at that support is not included in this build. Read it from the element's own force diagram.
+solved 2 phase(s) in 8.63 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/443645e20690459d9b7973b2d225079a/f5dc11cc0931419fa9f033fb5d682f65.res

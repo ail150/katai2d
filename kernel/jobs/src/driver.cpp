@@ -4806,6 +4806,7 @@ SolveResult solve_gravity_le(const model::Project& pr_drawn, const katai::mesh::
             sfin.tolerance = io.numeric.tolerance;
             sfin.load_steps = io.numeric.steps;
             sfin.max_iterations = io.numeric.max_iterations;
+            sfin.on_increment = io.on_increment;
             if (safety_from_parent) {
                 // The parent's internal force, assembled exactly as a chained phase assembles its
                 // baseline: the soil at the committed stresses plus the structures at their carried
@@ -5611,6 +5612,7 @@ SolveResult solve_gravity_le(const model::Project& pr_drawn, const katai::mesh::
         stin.time_interval_day = (io.chained && io.config) ? io.config->duration : 0.0;
         stin.active = act;
         stin.presc = presc;   // active prescribed displacements (empty = none)
+        stin.on_increment = io.on_increment;
         // The excess pore pressure the phase inherits belongs in its baseline too
         // (excess_pore_force.hpp): a chained phase starts in the parent's equilibrium, water
         // included, and ramps only its own change. Only here -- the coupled phases above keep the
@@ -5736,7 +5738,8 @@ std::vector<SolveResult> solve_phases(const model::Project& pr,
                                       const katai::mesh::Mesh& mesh_in, InitialPhase init_phase,
                                       const PhaseProgress& on_phase,
                                       const std::function<bool()>& cancelled,
-                                      const NumericalControls& numeric) {
+                                      const NumericalControls& numeric,
+                                      const IncrementProgress& on_increment) {
     std::vector<SolveResult> out;
     std::vector<katai::core::GaussState> committed;
     const int total = 1 + (int)pr.phases.size();
@@ -5759,6 +5762,13 @@ std::vector<SolveResult> solve_phases(const model::Project& pr,
     io0.config = &pr.initial;
     io0.numeric = controls_for(pr.initial);
     io0.out_states = &committed;
+    if (on_increment)
+        io0.on_increment = [&on_increment](int step, double load, const Eigen::VectorXd& u,
+                                           const std::vector<katai::core::GaussState>& states,
+                                           const std::vector<char>& active, double error,
+                                           int iterations) {
+            on_increment(0, "Initial phase", step, load, u, states, active, error, iterations);
+        };
     if (stop()) return out;
     if (on_phase) on_phase(0, total, "Initial phase");
     if (stop()) return out;
@@ -5807,6 +5817,15 @@ std::vector<SolveResult> solve_phases(const model::Project& pr,
         PhaseIO io;
         io.config = &ph;
         io.numeric = controls_for(ph);
+        if (on_increment)
+            io.on_increment = [&on_increment, pi, &ph](int step, double load,
+                                                       const Eigen::VectorXd& u,
+                                                       const std::vector<katai::core::GaussState>& states,
+                                                       const std::vector<char>& active,
+                                                       double error, int iterations) {
+                on_increment(static_cast<int>(pi) + 1, ph.name, step, load, u, states,
+                             active, error, iterations);
+            };
         io.chained = true;
         io.init_states = &committed;
         // The parent phase's result: a Dynamic phase superposes its increment onto this static state

@@ -78,7 +78,7 @@ using katai::core::InterfaceStation;
 // Older files predate each feature, so reading the fields back as false/0/None/empty is correct
 // for them -- except the v10 force error, which reads back as NaN: zero would be a measurement
 // nobody made.
-inline constexpr std::uint32_t kResultsFileVersion = 11;
+inline constexpr std::uint32_t kResultsFileVersion = 12;
 
 inline std::uint64_t fnv1a64(const std::string& s) {
     std::uint64_t h = 1469598103934665603ull;
@@ -197,6 +197,9 @@ inline bool save_results(const std::string& path, std::uint64_t model_hash,
             for (const auto& st : d.stations) {
                 w.put<double>(st.s); w.put<double>(st.x); w.put<double>(st.y);
                 w.put<double>(st.N); w.put<double>(st.Q); w.put<double>(st.M);
+                if (version >= 12) {
+                    w.put<double>(st.ux); w.put<double>(st.uy);
+                }
             }
         }
         // Interface results (v2): tau / sigma_n / slip / gap / slipping along each Coulomb joint.
@@ -338,6 +341,9 @@ inline bool load_results(const std::string& path, std::uint64_t model_hash,
                 katai::core::ForceStation st;
                 st.s = r.get<double>(); st.x = r.get<double>(); st.y = r.get<double>();
                 st.N = r.get<double>(); st.Q = r.get<double>(); st.M = r.get<double>();
+                if (ver >= 12) {
+                    st.ux = r.get<double>(); st.uy = r.get<double>();
+                }
                 sf.stations.push_back(st);
             }
             R.struct_forces.push_back(std::move(sf));

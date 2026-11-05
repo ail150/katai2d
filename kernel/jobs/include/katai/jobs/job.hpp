@@ -30,6 +30,8 @@
 #include <atomic>
 #include <chrono>
 #include <functional>
+#include <cmath>
+#include <limits>
 #include <string>
 #include <utility>
 #include <vector>
@@ -38,6 +40,7 @@
 #include <katai/jobs/driver.hpp>
 #include <katai/jobs/mesh_builder.hpp>
 #include <katai/model/project.hpp>
+#include <katai/analysis/post/stress_recovery.hpp>
 
 namespace katai::jobs {
 
@@ -46,6 +49,20 @@ enum class JobState { Pending, Validating, Meshing, Solving, Done, Failed, Cance
 struct PhaseTiming {
     std::string name;
     double seconds = 0.0;
+};
+
+struct IncrementSample {
+    int phase_index = 0;
+    std::string phase_name;
+    int increment = 0;
+    double load_factor = 0.0;
+    size_t node_index = 0;
+    double x = 0.0;
+    double y = 0.0;
+    double displacement = 0.0;
+    double sigma_magnitude = 0.0;
+    double force_error = 0.0;
+    int iterations = 0;
 };
 
 // (0-based phase index, total phases, display name), called from the running thread
@@ -58,6 +75,14 @@ public:
     explicit Job(model::Project project) : project_(std::move(project)) {}
 
     void set_on_phase(PhaseProgress cb) { on_phase_ = std::move(cb); }
+    void set_monitor_point(double x, double y) {
+        monitor_x_ = x;
+        monitor_y_ = y;
+        monitor_requested_ = true;
+    }
+    void set_on_increment(std::function<void(const IncrementSample&)> cb) {
+        on_increment_ = std::move(cb);
+    }
 
     // Cooperative: takes effect at the next phase boundary. Callable from any thread,
     // including from inside the progress callback (the announced phase then never runs).
@@ -90,10 +115,33 @@ public:
         }
 
         state_.store(JobState::Meshing, std::memory_order_release);
-        mesh_ = app::mesh_from_project(project_);
+        if (project_.explicit_mesh.has_value() && project_.explicit_mesh->element_count > 0) {
+            mesh_.mesh = *project_.explicit_mesh;
+            mesh_.ok = true;
+            mesh_.quality_met = true;
+            mesh_.message = "Mesh: " + std::to_string(mesh_.mesh.node_count) + " nodes, " +
+                            std::to_string(mesh_.mesh.element_count) + " elements.";
+        } else {
+            mesh_ = app::mesh_from_project(project_);
+        }
         if (!mesh_.ok) {
             finish(JobState::Failed, mesh_.message.empty() ? "meshing failed" : mesh_.message);
             return false;
+        }
+        if (mesh_.mesh.node_count > 0) {
+            const double x = monitor_requested_ ? monitor_x_ :
+                0.5 * (project_.x_min + project_.x_max);
+            const double y = monitor_requested_ ? monitor_y_ :
+                0.5 * (project_.y_min + project_.y_max);
+            monitor_node_ = 0;
+            double best = std::numeric_limits<double>::infinity();
+            for (int i = 0; i < mesh_.mesh.node_count; ++i) {
+                const double dx = mesh_.mesh.x[i] - x;
+                const double dy = mesh_.mesh.y[i] - y;
+                const double d2 = dx * dx + dy * dy;
+                if (d2 < best) { best = d2; monitor_node_ = static_cast<size_t>(i); }
+            }
+            monitor_resolved_ = true;
         }
         if (cancel_requested()) {
             finish(JobState::Cancelled, "cancelled after meshing");
@@ -112,9 +160,34 @@ public:
             t_open = now;
             if (on_phase_) on_phase_(cur, total, name);
         };
+        const auto increment = [this](int phase, const std::string& name, int number,
+                                      double load, const Eigen::VectorXd& displacement,
+                                      const std::vector<core::GaussState>& states,
+                                      const std::vector<char>& active, double error,
+                                      int iterations) {
+            if (!on_increment_ || !monitor_resolved_ ||
+                2 * monitor_node_ + 1 >= static_cast<size_t>(displacement.size())) return;
+            const auto nodal = core::recover_nodal_stresses_from_gauss(mesh_.mesh, states, active);
+            const auto& stress = nodal.stress[monitor_node_];
+            IncrementSample sample;
+            sample.phase_index = phase;
+            sample.phase_name = name;
+            sample.increment = number;
+            sample.load_factor = load;
+            sample.node_index = monitor_node_;
+            sample.x = mesh_.mesh.x[monitor_node_];
+            sample.y = mesh_.mesh.y[monitor_node_];
+            sample.displacement = std::hypot(displacement[2 * monitor_node_],
+                                             displacement[2 * monitor_node_ + 1]);
+            sample.sigma_magnitude = std::sqrt(stress[0] * stress[0] + stress[1] * stress[1] +
+                                               2.0 * stress[2] * stress[2]);
+            sample.force_error = error;
+            sample.iterations = iterations;
+            on_increment_(sample);
+        };
         results_ = app::solve_phases(project_, mesh_.mesh,
                                      app::initial_phase_from(project_.initial_procedure),
-                                     progress, [this] { return cancel_requested(); });
+                                     progress, [this] { return cancel_requested(); }, {}, increment);
         if (!timings_.empty())
             timings_.back().seconds =
                 std::chrono::duration<double>(clock::now() - t_open).count();
@@ -142,6 +215,8 @@ public:
     const std::vector<app::SolveResult>& results() const { return results_; }
     const std::vector<PhaseTiming>& timings() const { return timings_; }
     const std::string& message() const { return message_; }
+    bool monitor_resolved() const { return monitor_resolved_; }
+    size_t monitor_node() const { return monitor_node_; }
 
 private:
     void finish(JobState s, std::string msg) {
@@ -151,6 +226,10 @@ private:
 
     model::Project project_;
     PhaseProgress on_phase_;
+    std::function<void(const IncrementSample&)> on_increment_;
+    double monitor_x_ = 0.0, monitor_y_ = 0.0;
+    size_t monitor_node_ = 0;
+    bool monitor_requested_ = false, monitor_resolved_ = false;
     std::atomic<bool> cancel_{false};
     std::atomic<JobState> state_{JobState::Pending};
     io::ValidationReport report_;

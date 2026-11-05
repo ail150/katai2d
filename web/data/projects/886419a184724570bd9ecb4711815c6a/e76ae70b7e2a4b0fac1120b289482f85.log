@@ -1,0 +1,10 @@
+phase 1/2: Initial phase
+phase 2/2: Phases 1
+phase 1/2: ok  max|u| = 0.000000e+00 m
+  converged: force error 0.000e+00 of 1.000e-10 tolerated
+             stiffness-weighted force error 0.000e+00 (reported, not the stopping test)
+phase 2/2: ok  max|u| = 1.287129e-03 m
+  converged: force error 1.241e-14 of 1.000e-10 tolerated
+             stiffness-weighted force error 1.241e-14 (reported, not the stopping test)
+solved 2 phase(s) in 0.21 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/886419a184724570bd9ecb4711815c6a/e76ae70b7e2a4b0fac1120b289482f85.res

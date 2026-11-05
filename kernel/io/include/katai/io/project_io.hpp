@@ -573,6 +573,19 @@ inline std::string project_to_json(const Project& p) {
     if (!p.mesh.corner_refine) wfield(o, "corner_refine", false);
     closeobj(o); o += ',';
 
+    if (p.explicit_mesh && p.explicit_mesh->element_count > 0) {
+        wkey(o, "explicit_mesh"); o += '{';
+        wfield(o, "node_count", (double)p.explicit_mesh->node_count);
+        wfield(o, "element_count", (double)p.explicit_mesh->element_count);
+        wfield(o, "nodes_per_element", (double)p.explicit_mesh->nodes_per_element);
+        warr(o, "x", p.explicit_mesh->x);
+        warr(o, "y", p.explicit_mesh->y);
+        warr(o, "connectivity", p.explicit_mesh->connectivity);
+        warr(o, "element_material", p.explicit_mesh->element_material);
+        warr(o, "boundary_nodes", p.explicit_mesh->boundary_nodes);
+        closeobj(o); o += ',';
+    }
+
     wkey(o, "materials"); o += '[';
     for (size_t i = 0; i < p.materials.size(); ++i) {
         const Material& m = p.materials[i];
@@ -864,6 +877,21 @@ inline bool project_from_json(const std::string& text, Project& out, std::string
         p.mesh.rel = mo.num("rel", p.mesh.rel);
         p.mesh.grading = mo.num("grading", p.mesh.grading);
         p.mesh.corner_refine = mo.flag("corner_refine", p.mesh.corner_refine);
+    }
+
+    if (const Json* em = root.find("explicit_mesh"); em && em->type == Json::Obj) {
+        katai::mesh::Mesh m;
+        m.node_count = (int)em->num("node_count", 0);
+        m.element_count = (int)em->num("element_count", 0);
+        m.nodes_per_element = (int)em->num("nodes_per_element", 6);
+        m.x = em->nums("x");
+        m.y = em->nums("y");
+        m.connectivity = em->ints("connectivity");
+        m.element_material = em->ints("element_material");
+        m.boundary_nodes = em->ints("boundary_nodes");
+        if (m.element_count > 0 && m.x.size() == (size_t)m.node_count) {
+            p.explicit_mesh = std::move(m);
+        }
     }
 
     if (const Json* arr = root.find("materials"); arr && arr->type == Json::Arr)

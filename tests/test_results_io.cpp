@@ -113,8 +113,8 @@ std::vector<katai::app::SolveResult> build_phases() {
     katai::app::StructForce sf;
     sf.name = "Wall"; sf.kind = 0; sf.yielded = true;
     sf.max_N = 12.5; sf.max_Q = 3.25; sf.max_M = 44.0;
-    sf.stations.push_back({0.0, 10.0, 4.0, -12.5, 3.25, 0.0});
-    sf.stations.push_back({2.5, 10.0, 6.5, -6.0, 1.0, 44.0});
+    sf.stations.push_back({0.0, 10.0, 4.0, -12.5, 3.25, 0.0, 0.001, -0.002});
+    sf.stations.push_back({2.5, 10.0, 6.5, -6.0, 1.0, 44.0, 0.003, -0.004});
     ph[1].struct_forces.push_back(sf);
     katai::app::InterfaceResult ir;
     ir.name = "Wall interface"; ir.any_slip = true;
@@ -189,7 +189,7 @@ bool same(const katai::app::SolveResult& a, const katai::app::SolveResult& b) {
         if (x.stations.size() != y.stations.size()) return false;
         for (size_t q = 0; q < x.stations.size(); ++q) {
             const auto& s = x.stations[q]; const auto& t = y.stations[q];
-            if (s.s != t.s || s.x != t.x || s.y != t.y || s.N != t.N || s.Q != t.Q || s.M != t.M)
+            if (s.s != t.s || s.x != t.x || s.y != t.y || s.N != t.N || s.Q != t.Q || s.M != t.M || s.ux != t.ux || s.uy != t.uy)
                 return false;
         }
     }
@@ -266,6 +266,7 @@ int main() {
                 expect.diagnostics.clear(); expect.excess_pore.clear(); expect.consol_time.clear();
                 expect.consol_settlement.clear(); expect.consol_excess_pore.clear(); expect.saturation.clear();
                 expect.reaction.resize(0); expect.dyn_time.clear(); expect.dyn_surface_ax.clear();
+                for (auto& sf_exp : expect.struct_forces) for (auto& stn : sf_exp.stations) { stn.ux = 0.0; stn.uy = 0.0; }
                 expect.dyn_period.clear(); expect.dyn_response_sa.clear(); expect.dyn_design_sa.clear();
                 expect.dyn_design_sa_ec8.clear(); expect.dyn_peak_surface_a = 0.0; expect.dyn_model_f1 = 0.0;
                 rest_same = rest_same && same(expect, v10[k]);
@@ -320,6 +321,7 @@ int main() {
                 expect.diagnostics.clear(); expect.excess_pore.clear(); expect.consol_time.clear();
                 expect.consol_settlement.clear(); expect.consol_excess_pore.clear(); expect.saturation.clear();
                 expect.reaction.resize(0); expect.dyn_time.clear(); expect.dyn_surface_ax.clear();
+                for (auto& sf_exp : expect.struct_forces) for (auto& stn : sf_exp.stations) { stn.ux = 0.0; stn.uy = 0.0; }
                 expect.dyn_period.clear(); expect.dyn_response_sa.clear(); expect.dyn_design_sa.clear();
                 expect.dyn_design_sa_ec8.clear(); expect.dyn_peak_surface_a = 0.0; expect.dyn_model_f1 = 0.0;
                 rest_same = rest_same && same(expect, old[k]);

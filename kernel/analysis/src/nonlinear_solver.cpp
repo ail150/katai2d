@@ -709,6 +709,11 @@ NewtonResult solve_nonlinear_impl(const mesh::Mesh& mesh, const DofMap& dofs,
                 result.srf = std::max(result.srf, s_cur);
                 result.srf_path.push_back({s_cur, u_free.cwiseAbs().maxCoeff()});
                 ++result.timings.n_steps;
+                if (options.on_increment) {
+                    Eigen::VectorXd full = expand_to_full(dofs, u_free);
+                    options.on_increment(result.timings.n_steps, s_cur, full, committed,
+                                         active_element, 0.0, its);
+                }
                 if (debug) {
                     // e = d ln(s - s0) / d ln u over the last doubling of the displacement
                     const double un = result.srf_path.back()[1];
@@ -1089,12 +1094,14 @@ NewtonResult solve_nonlinear_impl(const mesh::Mesh& mesh, const DofMap& dofs,
         int creep = 0;  // consecutive iterations whose step was cut to under 1/4
         std::vector<double> progress;   // this attempt's residual norms, iterate by iterate
         std::vector<double> best_history;   // ... and the best of them so far, iterate by iterate
+        int step_iterations = 0;
         stall_floor = 0.0;
         bool kept = false;              // the last accepted full step's assembly is in builder_t
         Eigen::VectorXd kept_fint;
         double kept_floor = 0.0;
         bool kept_consistent = false, kept_freeze = false;
         for (int iter = 0; iter < options.max_iterations; ++iter) {
+            ++step_iterations;
             // Taken only under the controls it was made under: the stall floor moves after the line
             // search, and the tangent mode and the small-strain freeze between attempts.
             const bool reuse = kept && !elastic_mode &&
@@ -1651,6 +1658,14 @@ NewtonResult solve_nonlinear_impl(const mesh::Mesh& mesh, const DofMap& dofs,
             lambda = target_lambda;
             ++result.timings.n_steps;
             result.load_factor = lambda;
+            if (options.on_increment) {
+                Eigen::VectorXd full = expand_to_full(dofs, u_free);
+                if (has_presc)
+                    for (int d = 0; d < dofs.total_dofs(); ++d)
+                        if (dofs.is_fixed(d)) full[d] += lambda * presc(d);
+                options.on_increment(result.timings.n_steps, lambda, full, committed,
+                                     active_element, best_rnorm / ref, step_iterations);
+            }
             dlam = std::min(init_dlam, dlam * 1.5);  // allow recovery
         } else if (has_small && !small_freeze &&
                    ended != NewtonResult::Abandonment::SolveRefused) {

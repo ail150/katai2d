@@ -47,6 +47,7 @@ struct SafetyPhase {
     double tolerance = 0.0;
     int load_steps = 0;
     int max_iterations = 0;
+    IncrementObserver on_increment;
     // THE PARENT PHASE'S STATE, when the search starts from it (see safety_analysis): its
     // committed stresses, its internal force (soil + structures, equation space) and the
     // structures' carried state. All empty = the search re-solves the ground from the unstressed
@@ -201,6 +202,7 @@ inline bool solve_safety_phase(
                                 in.max_iterations > 0 ? in.max_iterations : 120,
                                 in.tolerance > 0.0 ? in.tolerance : 1e-3};
     sopt.newton.kinematics = in.axisymmetric ? Kinematics::Axisymmetric : Kinematics::PlaneStrain;
+    sopt.newton.on_increment = in.on_increment;
     const auto sr =
         in.from_parent()
             ? safety_analysis(mesh, dofs, f,

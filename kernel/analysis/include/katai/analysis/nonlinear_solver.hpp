@@ -37,6 +37,10 @@ struct Structures;
 using LinearSolve =
     std::function<Eigen::VectorXd(const math::CsrMatrix&, const Eigen::VectorXd&)>;
 
+using IncrementObserver = std::function<void(
+    int, double, const Eigen::VectorXd&, const std::vector<GaussState>&,
+    const std::vector<char>&, double, int)>;
+
 // Analysis kinematics: plane strain (3 strain components) or axisymmetric (4,
 // including hoop). In axisym the mesh is interpreted as (r, z).
 enum class Kinematics { PlaneStrain, Axisymmetric };
@@ -175,6 +179,7 @@ struct NewtonOptions {
     // no time).
     bool limit_by_arc = false;
     double limit_resolution = 1.0e-3;
+    IncrementObserver on_increment; // called after each committed load increment
 };
 
 // Plate (structural wall/beam) embedded in soil — 3-node Timoshenko beam (see

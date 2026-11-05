@@ -248,13 +248,14 @@ void assemble_internal_force_impl(const mesh::Mesh& mesh, const DofMap& dofs,
                                   const std::vector<GaussState>& states,
                                   Eigen::VectorXd& rhs,
                                   const std::vector<char>& active_element) {
+    const auto gauss = E::gauss_points();
     typename E::NodeCoords coords;
     std::array<int, E::kDofCount> element_dofs;
     for (int e = 0; e < mesh.element_count; ++e) {
         if (!active_element.empty() && !active_element[e]) continue;
         gather_element<E>(mesh, dofs, e, coords, element_dofs);
         for (int g = 0; g < E::kGaussCount; ++g) {
-            const auto& gp = E::gauss_points()[g];
+            const auto& gp = gauss[g];
             const auto sg = E::strain_displacement(coords, gp.xi, gp.eta);
             const double wJ = gp.weight * sg.det_jacobian;
             const Eigen::Vector3d& sigma = states[static_cast<size_t>(e) * E::kGaussCount + g].stress;
@@ -426,13 +427,14 @@ void assemble_axisym_internal_force_impl(const mesh::Mesh& mesh, const DofMap& d
                                          const std::vector<GaussState>& states,
                                          Eigen::VectorXd& rhs,
                                          const std::vector<char>& active_element) {
+    const auto gauss = E::gauss_points();
     typename E::NodeCoords coords;
     std::array<int, E::kDofCount> element_dofs;
     for (int e = 0; e < mesh.element_count; ++e) {
         if (!active_element.empty() && !active_element[e]) continue;
         gather_element<E>(mesh, dofs, e, coords, element_dofs);
         for (int g = 0; g < E::kGaussCount; ++g) {
-            const auto& gp = E::gauss_points()[g];
+            const auto& gp = gauss[g];
             const auto sg = axisym::strain_displacement<E>(coords, gp.xi, gp.eta);
             const GaussState& st = states[static_cast<size_t>(e) * E::kGaussCount + g];
             Eigen::Vector4d sig(st.stress(0), st.stress(1), st.stress(2), st.stress_zz);

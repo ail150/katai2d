@@ -118,6 +118,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# The Python front end is a shared module. On Unix every static library it links
+# must be position-independent; MSVC does not use this property.
+if(UNIX)
+  set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 # --- Build KPI: debugger symbols are opt-in --------------------------------
 # Measured on this tree 2026-08-26. RelWithDebInfo emitted /Z7 for every translation unit and
 # passed /debug to every link, and what that costs is not compilation -- it is the disk:

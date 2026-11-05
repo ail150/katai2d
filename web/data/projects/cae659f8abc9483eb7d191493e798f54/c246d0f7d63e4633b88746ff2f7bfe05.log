@@ -1,0 +1,6 @@
+phase 1/1: Initial phase
+phase 1/1: ok  max|u| = 1.719560e-02 m
+  converged: force error 2.343e-15 of 1.000e-06 tolerated, stiffness parameter 1.000
+             stiffness-weighted force error 2.343e-15 (reported, not the stopping test)
+solved 1 phase(s) in 0.41 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/cae659f8abc9483eb7d191493e798f54/c246d0f7d63e4633b88746ff2f7bfe05.res

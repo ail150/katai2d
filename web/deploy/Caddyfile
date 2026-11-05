@@ -1,0 +1,15 @@
+{$KATAI_DOMAIN} {
+	encode zstd gzip
+	@api path /api/*
+	reverse_proxy @api 127.0.0.1:8000
+	root * /opt/katai2d/web/client/dist
+	try_files {path} /index.html
+	file_server
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		X-Frame-Options DENY
+		Permissions-Policy camera=(), microphone=(), geolocation=()
+		-Server
+	}
+}

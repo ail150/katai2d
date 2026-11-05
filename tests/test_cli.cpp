@@ -24,6 +24,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#ifndef _WIN32
+#include <sys/wait.h>
+#endif
 
 namespace api = katai::api;
 
@@ -51,7 +54,14 @@ int run_cli(const std::string& args, const std::string& capture = {}) {
 #ifdef _WIN32
     cmd = "\"" + cmd + "\"";
 #endif
-    return std::system(cmd.c_str());
+    const int status = std::system(cmd.c_str());
+#ifdef _WIN32
+    return status;
+#else
+    if (status == -1) return status;
+    if (WIFEXITED(status)) return WEXITSTATUS(status);
+    return 128 + WTERMSIG(status);
+#endif
 }
 
 std::string slurp(const std::string& path) {
@@ -90,6 +100,21 @@ void test_validate_corpus() {
               (std::string("katai validate accepts ") + c).c_str());
 }
 
+void test_mesh_json() {
+    std::printf("-- standalone mesh preview as JSON --\n");
+    const std::string file = corpus("kv-fnd-008-strip-load.k2d");
+    check(run_cli("mesh \"" + file + "\"", "cli_mesh.json") == 0,
+          "katai mesh generates a preview without solving");
+    const std::string json = slurp("cli_mesh.json");
+    check(json.find("\"node_count\"") != std::string::npos,
+          "mesh JSON includes node count");
+    check(json.find("\"connectivity\"") != std::string::npos,
+          "mesh JSON includes element connectivity");
+    check(json.find("\"element_material\"") != std::string::npos,
+          "mesh JSON maps elements to materials");
+    std::remove("cli_mesh.json");
+}
+
 void test_refusals() {
     std::printf("-- refusals with honest exit codes --\n");
     check(run_cli("validate no-such-file.k2d") == 3, "missing file -> exit 3");
@@ -125,9 +150,38 @@ void test_solve_and_identity() {
     check(out.find("results written to") != std::string::npos, "the .res write is confirmed");
     std::remove("cli_solve_out.txt");
 
+    check(run_cli("results \"" + file + "\" cli_strip.res", "cli_results.json") == 0,
+          "katai results reads the .res through the canonical project hash");
+    const std::string json = slurp("cli_results.json");
+    check(json.find("\"phases\"") != std::string::npos,
+          "result JSON includes calculation phases");
+    check(json.find("\"displacement\"") != std::string::npos,
+          "result JSON includes displacement arrays");
+    check(json.find("\"stress\"") != std::string::npos,
+          "result JSON includes stress arrays");
+    check(json.find("\"struct_forces\"") != std::string::npos,
+          "result JSON includes structural force diagrams");
+
+    api::Project stale;
+    std::string err;
+    check(api::load_project(file, stale, &err), "stale-result fixture loads");
+    stale.name += " changed";
+    check(api::save_project(stale, "cli_stale.k2d", &err), "stale-result fixture writes");
+    check(run_cli("results cli_stale.k2d cli_strip.res", "cli_stale_out.txt") == 4,
+          "a model hash mismatch is refused with exit 4");
+    check(slurp("cli_stale_out.txt").find("stale") != std::string::npos,
+          "stale results explain that the model changed");
+
+    std::ofstream("cli_corrupt.res", std::ios::binary) << "not a result file";
+    check(run_cli("results \"" + file + "\" cli_corrupt.res") == 3,
+          "a malformed results file returns exit 3");
+    std::remove("cli_results.json");
+    std::remove("cli_stale.k2d");
+    std::remove("cli_stale_out.txt");
+    std::remove("cli_corrupt.res");
+
     // The same file, in process, through the same facade.
     api::Project pr;
-    std::string err;
     check(api::load_project(file, pr, &err), "identity fixture loads");
     api::Job job(pr);
     check(job.run(), "in-process job ran");
@@ -159,14 +213,30 @@ void test_solve_and_identity() {
               (std::string("katai solve runs ") + c + " -> exit 0").c_str());
 }
 
+void test_live_progress_json() {
+    std::printf("-- solve can atomically publish committed increment progress --\n");
+    const std::string project = corpus("kv-fnd-008-strip-load.k2d");
+    check(run_cli("solve \"" + project + "\" --progress cli_progress.json --monitor 1.23,0.17") == 0,
+          "solve accepts the progress and monitor options");
+    const std::string json = slurp("cli_progress.json");
+    for (const char* key : {"\"monitor\"", "\"node_index\"", "\"samples\"",
+                            "\"load_factor\"", "\"displacement\"", "\"sigma_magnitude\"",
+                            "\"force_error\"", "\"iterations\""})
+        check(json.find(key) != std::string::npos,
+              (std::string("progress JSON includes ") + key).c_str());
+    std::remove("cli_progress.json");
+}
+
 }  // namespace
 
 int main() {
     std::printf("The katai command line: exit codes, corpus, cross-process identity\n\n");
     test_usage_and_info();
     test_validate_corpus();
+    test_mesh_json();
     test_refusals();
     test_solve_and_identity();
+    test_live_progress_json();
     if (g_failures == 0) {
         std::printf("\nOK: the CLI runs what the file says and cannot change the answer\n");
         return 0;

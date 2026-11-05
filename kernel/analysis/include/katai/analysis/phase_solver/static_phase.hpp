@@ -171,6 +171,7 @@ struct StaticPhase {
     // Prescribed displacements (nonzero Dirichlet): full-DOF vector, ramped 0 -> value
     // together with the load (the caller fixed the corresponding dofs). Empty = none.
     Eigen::VectorXd presc;
+    IncrementObserver on_increment;
 };
 
 // Solve the phase. `carry_full` is the parent's converged full-DOF displacement
@@ -201,6 +202,7 @@ inline bool solve_static_phase(
                        in.tolerance};
     nopt.kinematics = in.axisymmetric ? Kinematics::Axisymmetric
                                       : Kinematics::PlaneStrain;
+    nopt.on_increment = in.on_increment;
     if (in.line_search_window > 0) nopt.line_search_window = in.line_search_window;
     if (in.substep_tolerance > 0.0) nopt.substep_tolerance = in.substep_tolerance;
     nopt.stagnation_accept = in.stagnation_accept;

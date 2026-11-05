@@ -1,0 +1,13 @@
+phase 1/2: Initial phase
+phase 2/2: Flexible footing load
+phase 1/2: ok  max|u| = 0.000000e+00 m
+  converged: force error 1.764e-15 of 1.000e-06 tolerated
+             stiffness-weighted force error 8.822e-16 (reported, not the stopping test)
+  warning K2D-A027  Initial phase: 6-noded elements in an axisymmetric model with a soil that can yield: a load at or near collapse is overestimated -- measured on a footing pushed into sand, 12% too high on a 0.4 m mesh and still 5% on 0.15 m, where the 15-noded element was 5% and 3% above the published value at 0.4 and 0.25 m. Use 15-noded elements for a bearing capacity or any other limit load in axisymmetry.
+phase 2/2: ok  max|u| = 4.362255e-02 m
+  converged: force error 2.425e-11 of 1.000e-06 tolerated, stiffness parameter 0.051, moment error 1.683e-12
+             stiffness-weighted force error 1.912e-11 (reported, not the stopping test)
+  note    K2D-A004  A structural element ends on a supported node. The reported reactions are the soil's contribution only; the element's own end force at that support is not included in this build. Read it from the element's own force diagram.
+  warning K2D-A027  Flexible footing load: 6-noded elements in an axisymmetric model with a soil that can yield: a load at or near collapse is overestimated -- measured on a footing pushed into sand, 12% too high on a 0.4 m mesh and still 5% on 0.15 m, where the 15-noded element was 5% and 3% above the published value at 0.4 and 0.25 m. Use 15-noded elements for a bearing capacity or any other limit load in axisymmetry.
+solved 2 phase(s) in 1.33 s
+results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/e9e219008c5e4697b2c9a40e9f522d58/e201a902869a4c93945b9adbe956578a.res

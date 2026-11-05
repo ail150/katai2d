@@ -9,6 +9,9 @@
 #include <cmath>
 #include <string>
 #include <vector>
+#include <optional>
+
+#include <katai/mesh/mesh.hpp>
 
 namespace katai::model {
 
@@ -969,6 +972,7 @@ struct Project {
     // is reproducible from the file alone (docs/k2d-format.md).
     InitialProcedure initial_procedure = InitialProcedure::K0Procedure;
     MeshSettings mesh;
+    std::optional<katai::mesh::Mesh> explicit_mesh;
 
     double top() const { return y_max; }
     double bottom() const { return y_min; }

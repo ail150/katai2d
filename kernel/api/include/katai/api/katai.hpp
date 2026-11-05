@@ -94,6 +94,7 @@ using jobs::Job;
 using jobs::JobState;
 using jobs::PhaseProgress;
 using jobs::PhaseTiming;
+using jobs::IncrementSample;
 
 // -- results --------------------------------------------------------------------------
 using app::MeshResult;

@@ -1,0 +1,4 @@
+warning: materials[0].Rinter: "Undrained clay": Rinter = 0.1 is entered but the interface is set to rigid, so the strength beside a wall is the soil's own (Rinter = 1). Turn rinter_rigid off to use it
+warning: materials[0].nu: "Undrained clay": an undrained analysis wants nu' <= 0.35 so that the pore fluid stays stiff against the skeleton (Kw >> n K'); this material has nu' = 0.4
+error: materials[0].gw_Sres: "Undrained clay": the residual saturation must lie in [0, 1) (got 1.1)
+REFUSED: the project fails its input contract: 1 error(s); the first at materials[0].gw_Sres: "Undrained clay": the residual saturation must lie in [0, 1) (got 1.1)

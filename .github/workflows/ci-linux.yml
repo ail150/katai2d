@@ -1,0 +1,45 @@
+name: Linux CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ubuntu-24-04:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - name: Install Python build dependencies
+        run: python -m pip install --disable-pip-version-check nanobind numpy
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/client/package-lock.json
+      - name: Build and test
+        env:
+          JOBS: "4"
+        run: bash scripts/build-linux.sh
+      - name: Test the project API and worker
+        run: |
+          python -m pip install --disable-pip-version-check -r web/server/requirements.txt httpx pytest
+          KATAI_CLI="$PWD/build/ubuntu-24.04/bin/katai" PYTHONPATH=web/server pytest -q web/server/test_app.py
+      - name: Build the web client
+        working-directory: web/client
+        run: npm ci && npm run build
+      - name: Run browser acceptance tests
+        working-directory: web/client
+        env:
+          KATAI_CLI: ${{ github.workspace }}/build/ubuntu-24.04/bin/katai
+        run: |
+          npx playwright install --with-deps chromium
+          npm run test:e2e
