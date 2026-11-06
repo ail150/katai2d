@@ -1,3 +1,0 @@
-warning: materials[0].nu: "Undrained clay": an undrained analysis wants nu' <= 0.35 so that the pore fluid stays stiff against the skeleton (Kw >> n K'); this material has nu' = 0.4
-error: structs[0].iface_material: "Sheet pile wall": interface material index 1 does not exist; the project has 1 soil material(s)
-REFUSED: the project fails its input contract: 1 error(s); the first at structs[0].iface_material: "Sheet pile wall": interface material index 1 does not exist; the project has 1 soil material(s)

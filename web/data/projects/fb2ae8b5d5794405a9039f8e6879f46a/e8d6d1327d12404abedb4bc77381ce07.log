@@ -1,6 +1,0 @@
-phase 1/1: Initial phase
-phase 1/1: ok  max|u| = 7.428244e-01 m  FoS = 1.015
-  warning K2D-A005  Slope soil: Strength reduction with a non-associated flow rule (material "Slope soil": phi = 19.6 deg, psi = 0 deg): the factor of safety depends on the mesh and falls as the mesh is refined, because the shear band narrows with the elements. Quote it with the mesh it was computed on, and confirm it with a refinement study.
-  note    K2D-A026  Slope soil: Material "Slope soil" has cohesion and its tension cut-off on, so the factor of safety counts no tensile strength: in the zone where the soil would be in tension -- about 0.421066 m deep at full strength, 2c'/(gamma sqrt(Ka)) -- it carries none. A slip-circle (limit-equilibrium) method takes c' along the whole surface, so its factor is higher by a few percent; switch the cut-off off to compare like with like.
-solved 1 phase(s) in 1.71 s
-results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/fb2ae8b5d5794405a9039f8e6879f46a/e8d6d1327d12404abedb4bc77381ce07.res

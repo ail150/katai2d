@@ -1,7 +1,0 @@
-phase 1/2: Initial phase
-phase 2/2: Flexible footing load
-phase 2:
-  note    K2D-A004  A structural element ends on a supported node. The reported reactions are the soil's contribution only; the element's own end force at that support is not included in this build. Read it from the element's own force diagram.
-  note    K2D-A040  the load could not be carried; the collapse load was followed by arc length from the last increment that closed, with the load factor an unknown, to where the path stops rising: 0.5062 of the phase's load, to 1e-3 of itself (not to the smallest load increment).
-  warning K2D-A019  2 increment(s) stopped converging before the phase's tolerance and were kept at their best iterate, with an out-of-balance force of up to 6.36e-04 of the load scale. The answer carries that much unbalanced force. Re-run with a finer or coarser mesh, or more load steps, to see whether it moves.
-FAILED: Did not fully converge: equilibrated 51% of the applied load. No step along the Newton direction reduced the out-of-balance force, at increments repeatedly cut back, with the stiffness parameter down to 0.00193 -- the body has softened into a mechanism. This equilibrated fraction is the incremental limit (collapse) load.

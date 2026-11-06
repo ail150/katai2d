@@ -1,7 +1,0 @@
-phase 1/1: Initial phase
-phase 1/1: ok  max|u| = 7.615191e-03 m
-  converged: force error 4.060e-14 of 1.000e-06 tolerated, stiffness parameter 0.869
-             stiffness-weighted force error 4.060e-14 (reported, not the stopping test)
-  warning K2D-A019  1 increment(s) stopped converging before the phase's tolerance and were kept at their best iterate, with an out-of-balance force of up to 1.69e-04 of the load scale. The answer carries that much unbalanced force. Re-run with a finer or coarser mesh, or more load steps, to see whether it moves.
-solved 1 phase(s) in 12.94 s
-results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/7078ff9728ad442d9c2d9cd9f8ff4bb9/55975631e0034f28943ae66b1057b900.res

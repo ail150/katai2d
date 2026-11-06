@@ -1,9 +1,0 @@
-phase 1/2: Initial phase
-phase 2/2: Phases 1
-phase 1/2: ok  max|u| = 7.613840e-03 m
-  converged: force error 3.823e-15 of 1.000e-06 tolerated, stiffness parameter 0.911
-             stiffness-weighted force error 3.823e-15 (reported, not the stopping test)
-phase 2/2: ok  max|u| = 4.307985e-01 m  FoS = 1.381
-  warning K2D-A005  Example 1 soil: Strength reduction with a non-associated flow rule (material "Example 1 soil": phi = 20 deg, psi = 0 deg): the factor of safety depends on the mesh and falls as the mesh is refined, because the shear band narrows with the elements. Quote it with the mesh it was computed on, and confirm it with a refinement study.
-solved 2 phase(s) in 4.43 s
-results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/d1a86cec58b74ce0a65d12f81c59141f/93fc8b0496534e769b319d602a010a14.res

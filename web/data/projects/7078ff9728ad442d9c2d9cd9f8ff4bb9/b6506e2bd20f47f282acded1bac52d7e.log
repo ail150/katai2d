@@ -1,5 +1,0 @@
-phase 1/1: Initial phase
-phase 1/1: ok  max|u| = 6.487797e-01 m  FoS = 1.398
-  warning K2D-A005  Example 1 soil: Strength reduction with a non-associated flow rule (material "Example 1 soil": phi = 20 deg, psi = 0 deg): the factor of safety depends on the mesh and falls as the mesh is refined, because the shear band narrows with the elements. Quote it with the mesh it was computed on, and confirm it with a refinement study.
-solved 1 phase(s) in 0.80 s
-results written to /mnt/c/Users/THIN 15 RYZEN/Documents/FEM/katai2d/web/data/projects/7078ff9728ad442d9c2d9cd9f8ff4bb9/b6506e2bd20f47f282acded1bac52d7e.res
