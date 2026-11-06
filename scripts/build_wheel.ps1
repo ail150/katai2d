@@ -102,7 +102,8 @@ source.
 
 ``pip install katai2d`` provides the ``katai`` Python package (an
 engineer-facing project builder over the published facade) and the ``katai``
-command line (``solve`` / ``validate`` / ``info``, documented exit codes).
+command line (``solve`` / ``mesh`` / ``results`` / ``validate`` / ``info``,
+documented exit codes).
 Units are fixed: kN, m, day.
 
 Documentation, examples and the verification matrix:
@@ -198,6 +199,20 @@ if (-not $SkipVerify) {
     & $vkatai solve (Join-Path $corpus "kv-fnd-010-prandtl-strip-footing.k2d")
     if ($LASTEXITCODE -ne 5) { throw "console script: past-collapse case exit $LASTEXITCODE, expected the honest 5" }
 
+    # The mesh and the results readers, from the INSTALLED wheel. Both are commands
+    # a script is meant to call, and both reach the engine through bindings that only
+    # exist if the wheel carries the right extension module: `mesh` needs the mesher
+    # and `results` needs the .res reader. A wheel that installed and answered `info`
+    # while carrying neither would pass every check above.
+    & $vkatai mesh (Join-Path $corpus "kv-slp-001-griffiths-lane-slope.k2d")
+    if ($LASTEXITCODE -ne 0) { throw "console script: mesh exit $LASTEXITCODE, expected 0" }
+
+    & $vkatai results (Join-Path $corpus "kv-num-003-k0-geostatic-block.k2d") $res
+    if ($LASTEXITCODE -ne 0) { throw "console script: results exit $LASTEXITCODE, expected 0" }
+
+    & $vkatai validate (Join-Path $corpus "kv-slp-001-griffiths-lane-slope.k2d") --json
+    if ($LASTEXITCODE -ne 0) { throw "console script: validate --json exit $LASTEXITCODE, expected 0" }
+
     & $vpy (Join-Path $repo "python\examples\slope_stability.py")
     if ($LASTEXITCODE -ne 0) { throw "the installed wheel failed the slope example's corpus-band guard" }
 
@@ -208,7 +223,7 @@ if (-not $SkipVerify) {
     & $vpy (Join-Path $repo "python\examples\anchored_excavation.py")
     if ($LASTEXITCODE -ne 0) { throw "the installed wheel failed the anchored-excavation example (prj.structures)" }
 
-    Write-Host "verified: fresh venv, scrubbed environment -- console script exit codes 0/0/0/5, the corpus-band guard and the structural surface all hold" -ForegroundColor Green
+    Write-Host "verified: fresh venv, scrubbed environment -- console script exit codes 0/0/0/5, the mesh and results readers, the corpus-band guard and the structural surface all hold" -ForegroundColor Green
 }
 
 # --------------------------------------------------------------------- ship --

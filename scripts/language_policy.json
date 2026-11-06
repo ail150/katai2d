@@ -3,7 +3,9 @@
 
   "exempt_paths": [
     "^third_party/",
-    "^build"
+    "^build",
+    "^web/server/\\.venv/",
+    "^web/client/node_modules/"
   ],
 
   "exempt_line_patterns": []

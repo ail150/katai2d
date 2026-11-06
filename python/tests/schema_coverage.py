@@ -319,6 +319,25 @@ def coverage_project():
     ph2.poly_water = [1]
     ph2.poly_water_level = [-2.0]
     pr.phases = [ph, ph2]
+
+    # The mesh the project CARRIES, so the writer emits the `explicit_mesh` block and its
+    # seven keys reach the coverage universe. The writer emits the block only when the
+    # project carries a mesh with at least one element, so without this the keys were
+    # unreachable from Python -- the gate said so, and it was right.
+    #
+    # One triangle is enough: the point is reachability, not physics. The node count, the
+    # element count and the node count per element are stated, because the writer emits
+    # them as numbers and the reader checks them against the arrays.
+    m = core.Mesh()
+    m.nodes_per_element = 3
+    m.node_count = 3
+    m.element_count = 1
+    m.x = [0.0, 1.0, 0.0]
+    m.y = [0.0, 0.0, 1.0]
+    m.connectivity = [0, 1, 2]
+    m.element_material = [0]
+    m.boundary_nodes = [0, 1, 2]
+    pr.explicit_mesh = m
     return pr
 
 

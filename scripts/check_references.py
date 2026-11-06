@@ -91,6 +91,12 @@ FIELD_RE = re.compile(r"^\s*//\s+(oracle|source|locator|quantity|expected|band):
 CONT_RE = re.compile(r"^\s*//\s+(\S.*?)\s*$")
 NONE_RE = re.compile(r"^none\s*(?:--|—)\s*(\S.*)$")
 
+# The input corpus (roadmap section 6.3): a case that runs from a checked-in file says so in
+# its locator, naming the file under tests/corpus/. The file name IS the case id in lower
+# case plus a slug, so the matrix can name the artifact a row was produced from without a
+# second registry to keep in step with the first.
+CORPUS_RE = re.compile(r"tests/corpus/([A-Za-z0-9._-]+\.k2d)")
+
 # Test files that predate the gate and do not yet carry a declaration.
 # Frozen at adoption, 2026-07-30. Entries LEAVE this list when the file gains
 # its block; nothing is ever added. A new test without a declaration fails.
@@ -296,8 +302,9 @@ def render_matrix(decls: list[Declaration], undeclared: list[str]) -> str:
     out.append("")
     out.append("Each row is generated from a machine-readable declaration (roadmap section 6.2)")
     out.append("inside the test that enforces it, so this table cannot drift from the suite.")
-    out.append("The `Input file` column stays empty until the input corpus (section 6.3) lands;")
-    out.append("every row is asserted by a ctest regression on every build of every composition")
+    out.append("The `Input file` column names the checked-in corpus file the case runs from, when")
+    out.append("it has one; a case that builds its model in code has none, and says so with a dash.")
+    out.append("Every row is asserted by a ctest regression on every build of every composition")
     out.append("that contains its modules.")
     out.append("")
     out.append("| Case | Class | Quantity | Source and locator | Expected | Band | Oracle | Input file | Test |")
@@ -306,9 +313,17 @@ def render_matrix(decls: list[Declaration], undeclared: list[str]) -> str:
         f = d.fields
         test = Path(d.file).stem
         src = f"{f.get('source', '?')} — {f.get('locator', '?')}"
+        # The corpus file is named wherever the declaration happens to mention it -- in the
+        # locator ("run from the checked-in ...") or in the quantity ("... run from the
+        # checked-in ... [-]"). Both are the same fact about the same case, so the column
+        # is filled from the whole declaration rather than from one field of it.
+        corpus = None
+        for field in ("locator", "quantity", "source", "expected"):
+            corpus = corpus or CORPUS_RE.search(f.get(field, ""))
+        input_file = f"`{corpus.group(1)}`" if corpus else "—"
         out.append(f"| {d.case} | {d.cls} | {f.get('quantity', '?')} | {src} "
                    f"| {f.get('expected', '?')} | {f.get('band', '?')} "
-                   f"| {f.get('oracle', '?')} | — | `{test}` |")
+                   f"| {f.get('oracle', '?')} | {input_file} | `{test}` |")
     out.append("")
     out.append(f"**Coverage, computed:** {len(rows)} declared case(s) across "
                f"{len({d.file for d in rows})} test file(s); "

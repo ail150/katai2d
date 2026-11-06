@@ -7,7 +7,7 @@ test('verify mesh size changes in input are used in calculation and output', asy
 
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);
@@ -112,7 +112,7 @@ test('verify changing mesh size without clicking generate mesh automatically rec
 
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

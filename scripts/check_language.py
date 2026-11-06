@@ -91,6 +91,11 @@ CPP, HASH, PROSE = "cpp", "hash", "prose"
 
 ALLOW_MARKER = re.compile(r"katai-lang:\s*allow")
 
+# Paths the OS would not let us stat, collected during the walk and reported at
+# the end. Module-level so iter_sources (which has no way to return two things)
+# can hand them back; the run resets it.
+unreadable: list[Path] = []
+
 
 def comment_style(path: Path) -> str | None:
     """Which comment syntax applies to this file, or None if it is not scanned."""
@@ -227,14 +232,30 @@ def iter_sources(roots: list[Path], skip: list[re.Pattern]) -> list[Path]:
     for root in roots:
         candidates = [root] if root.is_file() else sorted(root.rglob("*"))
         for path in candidates:
-            if not path.is_file():
-                continue
-            if tracked is not None and path.resolve() not in tracked:
-                continue
-            if comment_style(path) is None:
-                continue
+            # The exemption is decided BEFORE the path is stat'd: an exempt
+            # directory (a virtualenv, a node_modules tree) is walked past
+            # without ever asking the OS about it, so a link inside it that
+            # cannot be stat'd is never a problem to report.
             rel = display_path(path, REPO_ROOT)
             if any(p.search(rel) for p in skip):
+                continue
+            # A path the OS cannot even stat is not a source file to read prose
+            # from -- it is a broken symlink or a link whose target lives on a
+            # filesystem this process cannot see (a WSL virtualenv under a
+            # Windows checkout is the case that showed up). Asking `is_file()`
+            # on one raises OSError, and a gate that dies on a directory it was
+            # pointed at reports nothing about any of the files that were
+            # readable. Skip what cannot be read; say so at the end.
+            try:
+                if not path.is_file():
+                    continue
+                resolved = path.resolve()
+            except OSError:
+                unreadable.append(path)
+                continue
+            if tracked is not None and resolved not in tracked:
+                continue
+            if comment_style(path) is None:
                 continue
             found.append(path)
     return found
@@ -339,12 +360,33 @@ def main() -> int:
         REPO_ROOT / "docs",
         REPO_ROOT / "LaTeX",
         REPO_ROOT / "CMakeLists.txt",
+        # The shipped code. `python/` is the wheel's content and `web/server/` is
+        # the app's server: both are read by people outside this repository, so
+        # their prose is held to the same rule as the engine's. `web/client/` is
+        # NOT in this list yet: its user-facing strings are a localisation
+        # surface, and the gate's exemption mechanism is for exactly that case --
+        # putting a directory of UI text under a comment-language gate without
+        # first deciding what a user-visible string is allowed to be would make
+        # the gate cry wolf, and a gate that cries wolf gets ignored.
+        REPO_ROOT / "python",
+        REPO_ROOT / "web" / "server",
     ]
     roots = [r for r in roots if r.exists()]
 
     hits: list[Hit] = []
+    unreadable.clear()
     for path in iter_sources(roots, skip):
         hits.extend(scan(path, exempt_line))
+
+    if unreadable:
+        # Said out loud rather than passed over in silence: a path the gate could
+        # not read is a path whose prose is unchecked, and "clean" would be a claim
+        # about files it never opened.
+        print(f"check_language: {len(unreadable)} path(s) could not be read and were NOT checked:")
+        for path in unreadable[:10]:
+            print(f"  {path}")
+        if len(unreadable) > 10:
+            print(f"  ... and {len(unreadable) - 10} more")
 
     if args.report:
         if args.by_file:

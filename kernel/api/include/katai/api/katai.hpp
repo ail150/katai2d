@@ -30,6 +30,7 @@
 #include <katai/io/results_io.hpp>
 #include <katai/io/validate.hpp>
 #include <katai/materials/material_model.hpp>   // the undrained-stiffness conversions
+#include <katai/model/stratigraphy.hpp>          // generating the ground from borehole logs
 #include <katai/jobs/job.hpp>
 #include <katai/linsolve/direct_solver.hpp>   // backend_name(): result provenance
 #include <katai/analysis/liquefaction.hpp>     // checks: TBDY 2018 Annex 16B triggering
@@ -58,6 +59,7 @@ using model::DrainBehaviour;
 using model::Phase;
 using model::BoundaryConditions;
 using model::MeshSettings;
+using mesh::Mesh;                // the discretisation a project may carry with it (explicit_mesh)
 using model::SoilModel;
 using model::Drainage;
 using model::PhaseType;
@@ -69,6 +71,13 @@ using model::LoadKind;
 using model::BCType;
 using model::FlowBCType;
 using model::InitialProcedure;
+// Generating the ground from borehole logs: the polygons and the phreatic line the
+// logs describe. A front end needs it -- the logs are the input an engineer actually
+// has, and the drawing is the output. Kept apart from the generator so a caller can
+// show the result before committing to it.
+using model::StratigraphyResult;
+using model::stratigraphy_from_boreholes;
+using model::apply_stratigraphy;
 
 // -- files ----------------------------------------------------------------------------
 using model::kProjectFileVersion;
@@ -99,6 +108,12 @@ using jobs::IncrementSample;
 // -- results --------------------------------------------------------------------------
 using app::MeshResult;
 using app::SolveResult;
+// The mesher, as a front end needs it: build the mesh the project describes, without
+// solving it. It belongs here rather than behind the CLI alone because a front end that
+// wants to show the mesh before committing to a solve -- the web app's mesh preview, the
+// Python front end's `mesh` command -- must reach the SAME mesher the solver uses. Two
+// meshers would mean the mesh a user looks at is not the mesh the answer was computed on.
+using app::mesh_from_project;
 // Everything a run did that its file does not literally say -- clipped geometry, a fallback
 // taken, an object refused. A front end that hides this list hides the one report that is
 // made against the MESH, which the input contract (validated before meshing) cannot see.

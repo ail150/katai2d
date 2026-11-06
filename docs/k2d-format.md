@@ -8,7 +8,7 @@ Schema, every key documented here must still exist in the code, and the enum bou
 equal the enums in `kernel/model/include/katai/model/project.hpp`. A hand-maintained format document
 that can drift from the code would be a silent-wrong of its own kind; this one cannot drift silently.
 
-Current `.k2d` version: **29** · Current `.res` version: **11**
+Current `.k2d` version: **29** · Current `.res` version: **12**
 
 Version history: **v2** adds line prescribed displacements (`disps` and the phase `disp`
 activity flags). **v3** adds the anchor lock-off force (`anchors[i].prestress`), **v4** the
@@ -156,6 +156,7 @@ flagged places differs from the in-memory default of a freshly created object.
 | `wx` | num[] | m | `[]` | Water polyline x-coordinates (with `wy`; needs ≥ 2 points to take effect) |
 | `wy` | num[] | m | `[]` | Water polyline y-coordinates (elevation head) |
 | `mesh` | object | — | defaults | Global mesh-generation settings (object below); the file determines its own discretization |
+| `explicit_mesh` | object | — | absent | A mesh carried by the file itself (object below). When present and self-consistent, the solver uses it instead of generating one, so the file describes the discretization it was checked on. Written only when the project carries a mesh |
 | `materials` | array | — | `[]` | Soil material data sets (objects below) |
 | `plates` | array | — | `[]` | Plate material data sets |
 | `anchors` | array | — | `[]` | Anchor material data sets |
@@ -181,6 +182,19 @@ flagged places differs from the in-memory default of a freshly created object.
 | `grading` | num | — | `0.15` | Growth of the element size per metre away from a refined object, h(d) = h_object + grading · d, until it meets the size around it. Written only when not the default (files older than v29 are read with 0.5) |
 | `corner_refine` | bool | — | `true` | Enhanced refinement at corners: where geometry lines meet at an angle that is not a multiple of 90°, the size there is the element size times a factor of the sharpest angle between them (1 at 90/180/270°, 0.5 at 45° and 135°, 0.1 at a sliver). Written only when `false` (files older than v29 are read with `false`) |
 | `rel` | num | — | `0` | Relative element size: `0` = `elem_size` is the size; above 0 the target element edge is this factor times a twentieth of the model's diagonal (from `x_min`..`x_max`, `y_min`..`y_max`), so a model drawn wider keeps the same density; 2 / 1.33 / 1 / 0.67 / 0.5 are very coarse … very fine. It also sets the virtual thickness of the interfaces, which `elem_size` sets otherwise. Written only when set |
+
+#### Explicit mesh object (`explicit_mesh`)
+
+| Key | Type | Unit | Default | Meaning |
+|---|---|---|---|---|
+| `node_count` | int | — | `0` | Number of mesh nodes. The reader accepts the mesh only when `x` holds exactly this many coordinates |
+| `element_count` | int | — | `0` | Number of elements. A mesh with `0` elements is ignored and the model is meshed from `mesh` instead |
+| `nodes_per_element` | int | — | `6` | Node count of one element: 3 (linear triangle), 6 (quadratic triangle), 15 (quartic triangle) |
+| `x` | num[] | m | `[]` | Node x-coordinates, `node_count` of them |
+| `y` | num[] | m | `[]` | Node y-coordinates, `node_count` of them |
+| `connectivity` | int[] | — | `[]` | Element connectivity, `nodes_per_element` node indices per element, so `element_count · nodes_per_element` entries |
+| `element_material` | int[] | — | `[]` | Material index per element, into `materials` (0-based) |
+| `boundary_nodes` | int[] | — | `[]` | Indices of the nodes on the model's outer boundary, used for the traction-free edges |
 
 #### Soil material object (`materials[i]`)
 
@@ -553,6 +567,12 @@ u32 phase count · per phase: flags + scalars + message + displacements/stresses
   the design approach that makes it an over-design factor, the diagnostics (a warning that
   qualifies a number belongs with the number), the excess pore pressure field, the consolidation
   curve, the degree of saturation, the support reactions and the seismic records.
+- **v12** adds the displacement at each structural force station (`ux`, `uy`), next to its
+  `N` / `Q` / `M`. A force diagram on its own says how much force a structure carries but not
+  where it carries it; without the station's displacement the diagram cannot be placed on the
+  deformed shape, and the two together are what says whether a wall's moment arrived at a
+  rotation the ground can explain. A file older than v12 reads the two back as zero, shown as
+  "not recorded" — zero would be a measurement nobody made.
 - Files are written whole or not at all: a save goes to a temporary file beside the target,
   which replaces it only once complete. Paths are UTF-8 on every platform.
 - Committed Gauss states are NOT stored: restored results are for viewing and post-processing;

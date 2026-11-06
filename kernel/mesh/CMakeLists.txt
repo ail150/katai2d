@@ -1,5 +1,5 @@
-# katai_mesh — mesher (minimal). P0.5: rectangle → structured tri6.
-# Full Delaunay + Ruppert refinement arrives in Phase 1.
+# katai_mesh — the mesher: structured fallback, constrained Delaunay and Ruppert
+# quality refinement with a sizing field (src/delaunay.cpp).
 add_library(katai_mesh STATIC
   src/mesh.cpp
   src/geom_predicates.cpp

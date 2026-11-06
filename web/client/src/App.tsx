@@ -6,16 +6,11 @@ import schemaJson from '../../../docs/k2d.schema.json'
 type Dict = Record<string, any>
 type Point = [number, number]
 const schema:Dict=schemaJson as Dict
-const rawCorpusExamples=import.meta.glob('../../../tests/corpus/*.k2d',{eager:true,query:'?raw',import:'default'}) as Record<string,string>
-const rawStudyExamples=import.meta.glob('../../../tests/studies/*.k2d',{eager:true,query:'?raw',import:'default'}) as Record<string,string>
-
-const corpusExamples=Object.entries(rawCorpusExamples).sort(([a],[b])=>a.localeCompare(b)).map(([filename,raw])=>({filename,category:'Corpus Benchmarks',project:JSON.parse(raw) as Dict}))
-const studyExamples=Object.entries(rawStudyExamples).sort(([a],[b])=>a.localeCompare(b)).map(([filename,raw])=>({
- filename,
- category:filename.includes('test-')?'Structural & Tunnel Cases':'Geotechnical Studies',
- project:JSON.parse(raw) as Dict
-}))
-const allPresets=[...studyExamples,...corpusExamples]
+// Example/preset libraries were removed (plaxis-parity plan Phase 1, decision D1):
+// the UI no longer ships bundled tutorial, study or corpus projects. The .k2d
+// regression fixtures still live in tests/corpus and tests/studies for the kernel
+// suite; they are simply not imported into the client any more. Users start from
+// New project or Open .k2d.
 
 type Mesh = { node_count:number; element_count:number; nodes_per_element:number; x:number[]; y:number[]; connectivity:number[]; element_material:number[]; boundary_nodes:number[] }
 type PhaseResult = Dict & { mesh:Mesh; displacement:number[]; stress:number[][]; pore:number[]; struct_forces:Dict[]; interface_forces:Dict[]; diagnostics:Dict[]; active?: number[] }
@@ -24,7 +19,6 @@ const bands: Record<string,string[]> = {Soil:['Project properties','materials','
 const labels:Record<string,string>={materials:'Soil materials',polygons:'Soil polygons',strata:'Strata',boreholes:'Boreholes',structs:'Structures',plates:'Plate materials',anchors:'Anchor materials',geogrids:'Geogrid materials',embedded:'Embedded beam materials',loads:'Loads',disps:'Prescribed displacements',hydros:'Wells and drains',initial:'Initial phase',phases:'Calculation phases',mesh:'Mesh settings',project:'Project properties'}
 const arrays=new Set(['materials','plates','anchors','geogrids','embedded','polygons','strata','boreholes','structs','loads','disps','hydros','phases'])
 const defaults:Dict={katai2d:29,name:'Untitled project',axisymmetric:false,initial_procedure:0,x_min:0,x_max:20,y_min:0,y_max:10,has_water:false,wx:[],wy:[],mesh:{elem_size:1,order:6,auto_refine:true,corner_refine:true,grading:0.15,generator:'plaxis',preset:'Medium'},materials:[{name:'Sand',model:1,drainage:0,color:[0.91,0.78,0.48],gamma_unsat:17,gamma_sat:20,e_init:0.5,E:13000,nu:0.3,c:1,phi:30,psi:0,kx:1,ky:1}],plates:[],anchors:[],geogrids:[],embedded:[],strata:[],boreholes:[],polygons:[],structs:[],loads:[],disps:[],hydros:[],initial:{name:'Initial phase',type:0,duration:1,steps:25,design:0,seiswave:0,seisamp:1,seisfreq:2,damp:0.05,rayf1:1,rayf2:8,seisff:0,dynnl:0,seiscb:0,ec8on:0,ec8agr:.2,ec8gi:1,ec8gnd:2,ec8typ:0,tbdyss:1,tbdys1:.4,siteclass:2,poly:[],struct:[],load:[],disp:[],hydro:[],water_override:false,wx:[],wy:[]},phases:[]}
-const tools = [{id:'select',title:'Select',icon:MousePointer2},{id:'pan',title:'Pan',icon:Move},{id:'monitor',title:'Monitor point',icon:Crosshair},{id:'polygon',title:'Soil polygon',icon:Layers},{id:'rectangle',title:'Rectangle',icon:Square},{id:'borehole',title:'Borehole',icon:Crosshair},{id:'structure',title:'Structure line',icon:Activity},{id:'load',title:'Distributed load',icon:ArrowDownToLine},{id:'disp',title:'Prescribed displacement',icon:Crosshair},{id:'hydro',title:'Well / drain',icon:Activity},{id:'water',title:'Water line',icon:Activity}]
 const colors=['#8c6d35','#3d78a8','#894e91','#bf6b3d','#4c847b','#6672a7']
 function clone<T>(x:T):T{return JSON.parse(JSON.stringify(x))}
 
@@ -294,6 +288,11 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
  const model=Number(mat.model??1)
  const drainage=Number(mat.drainage??0)
  const update=(key:string,val:any)=>onChange({...mat,[key]:val})
+ // PLAXIS-style material tabs (General / Mechanical / Groundwater / Interfaces /
+ // Initial). Every field below is unchanged; the tabs only group them the way
+ // the PLAXIS Soil window does (Reference Manual ch. 6).
+ const [matTab,setMatTab]=useState<'General'|'Mechanical'|'Groundwater'|'Interfaces'|'Initial'>('General')
+ const matTabs:Array<typeof matTab>=['General','Mechanical','Groundwater','Interfaces','Initial']
 
  const num=(label:string,key:string,val:any,step:string='any',placeholder:string='')=>(
   <label className="field" key={key}>
@@ -333,7 +332,11 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
  const activeModelName=String(modelOptions.find(([v])=>v===model)?.[1]||'Mohr-Coulomb (MC)')
 
  return <div className="material-editor">
-  <div className="property-group">
+  <div className="mat-tabs" role="tablist" aria-label="Material property tabs">
+   {matTabs.map(t=><button key={t} role="tab" aria-selected={matTab===t} className={`mat-tab ${matTab===t?'active':''}`} onClick={()=>setMatTab(t)}>{t}</button>)}
+  </div>
+
+  {matTab==='General'&&<div className="property-group">
    <div className="property-group-head">
     <span>General properties</span>
     <span className="property-badge">{activeModelName.split(' ')[0]}</span>
@@ -364,14 +367,12 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
    </label>
    {num('Gamma unsat','gamma_unsat',mat.gamma_unsat??17,'any','kN/m³')}
    {num('Gamma sat','gamma_sat',mat.gamma_sat??20,'any','kN/m³')}
-   {num('Kx','kx',mat.kx??1,'any','m/day')}
-   {num('Ky','ky',mat.ky??1,'any','m/day')}
    {num('E init','e_init',mat.e_init??0.5,'any','initial void ratio')}
-  </div>
+  </div>}
 
-  <div className="property-group">
+  {matTab==='Mechanical'&&<div className="property-group">
    <div className="property-group-head">
-    <span>Constitutive parameters ({activeModelName})</span>
+    <span>Mechanical parameters ({activeModelName})</span>
    </div>
 
    {model===0&&<>
@@ -510,12 +511,16 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
      {num('Jrpsi3','jrpsi3',mat.jrpsi3??0,'any','ψ3 (°)')}
     </div>}
    </>}
-  </div>
+  </div>}
 
-  <details className="nested" open>
-   <summary>Interfaces & Initial stress (K0 / OCR)</summary>
+  {matTab==='Interfaces'&&<div className="property-group">
+   <div className="property-group-head"><span>Interfaces (soil–structure strength)</span></div>
    {check('Rinter rigid','rinter_rigid',mat.rinter_rigid??true)}
-   {num('Rinter','Rinter',mat.Rinter,'any','1')}
+   {num('Rinter','Rinter',mat.Rinter,'any','strength factor (0,1]')}
+  </div>}
+
+  {matTab==='Initial'&&<div className="property-group">
+   <div className="property-group-head"><span>Initial stresses (K0 / OCR / POP)</span></div>
    {check('K0 auto','k0_auto',mat.k0_auto??true)}
    {num('K0','k0',mat.k0,'any','0.5')}
    <label className="field">
@@ -528,10 +533,12 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
    </label>
    {num('OCR','OCR',mat.OCR,'any','1')}
    {num('POP','POP',mat.POP,'any','0')}
-  </details>
+  </div>}
 
-  <details className="nested" open>
-   <summary>Groundwater & Undrained parameters</summary>
+  {matTab==='Groundwater'&&<div className="property-group">
+   <div className="property-group-head"><span>Groundwater (permeability & undrained)</span></div>
+   {num('Kx','kx',mat.kx??1,'any','m/day')}
+   {num('Ky','ky',mat.ky??1,'any','m/day')}
    {num('Nu u','nu_u',mat.nu_u,'any','0.495')}
    {num('Skempton B','skempton_B',mat.skempton_B,'any','0.99')}
    {num('Und mode','und_mode',mat.und_mode,'1','0=Standard, 1=Effective')}
@@ -539,9 +546,9 @@ function SoilMaterialEditor({mat,onChange}:{mat:Dict;onChange:(m:Dict)=>void}){
    {num('Gw gl','gw_gl',mat.gw_gl,'any','0.5')}
    {num('Gw gn','gw_gn',mat.gw_gn,'any','1.5')}
    {num('Gw Sres','gw_Sres',mat.gw_Sres,'any','0.01')}
-  </details>
+  </div>}
 
-  {(()=>{
+  {matTab==='Mechanical'&&(()=>{
    const generalKeys=new Set([
     'name','model','drainage','color','gamma_unsat','gamma_sat','kx','ky','e_init',
     'rinter_rigid','Rinter','k0_auto','k0','oc_mode','OCR','POP',
@@ -1354,9 +1361,26 @@ function MeshSettingsEditor({
 }
 
 function App(){
- const [token,setToken]=useState(localStorage.getItem('katai-token')||'');const [authorized,setAuthorized]=useState(false);const [project,setProject]=useState<Dict>(clone(defaults));const [projectId,setProjectId]=useState('');const [mode,setMode]=useState('Soil');const [selected,setSelected]=useState<{key:string,index:number}|null>(null);const [cursorPos,setCursorPos]=useState<Point|null>(null);const [tool,setTool]=useState('select');const [monitorPoint,setMonitorPoint]=useState<Point|null>(null);const [draft,setDraft]=useState<Point[]>([]);const [mesh,setMesh]=useState<Mesh|null>(null);const [isMeshing,setIsMeshing]=useState(false);const [results,setResults]=useState<PhaseResult[]>([]);const [phase,setPhase]=useState(0);const [structKind,setStructKind]=useState(0);const structKindRef=useRef(0);const [dropHighlight,setDropHighlight]=useState<{key:string,index:number}|null>(null);const [resultField,setResultField]=useState('Total Displacement |u| [mm]');const [job,setJob]=useState<Dict|null>(null);const [log,setLog]=useState('');const [notice,setNotice]=useState('Ready');const [validation,setValidation]=useState<Dict|null>(null);const [scale,setScale]=useState(1);const [grid,setGrid]=useState(true);const [snap,setSnap]=useState(true);const [showArrows,setShowArrows]=useState(false);const [vectorDir,setVectorDir]=useState<'total'|'x'|'y'>('total');const [showContours,setShowContours]=useState(false);const [showMeshLines,setShowMeshLines]=useState(true);const [showDeformed,setShowDeformed]=useState(true);const [deformScale,setDeformScale]=useState(1.0);const [tab,setTab]=useState<'Model'|'Output'>('Model');const [outputView,setOutputView]=useState<'mesh'|'structures'>('mesh');const [structForceType,setStructForceType]=useState<'M'|'Q'|'N'|'u'>('M');const [selectedStructIdx,setSelectedStructIdx]=useState<number>(-1);const [structDiagScale,setStructDiagScale]=useState<number>(0.02);const [treeOpen,setTreeOpen]=useState(true);const [openMenu,setOpenMenu]=useState('');const [helpOpen,setHelpOpen]=useState(false);const [presetModalOpen,setPresetModalOpen]=useState(false);const [presetCategory,setPresetCategory]=useState('All');const [presetSearch,setPresetSearch]=useState('');const canvasRef=useRef<HTMLCanvasElement>(null);const wrapRef=useRef<HTMLDivElement>(null);const view=useRef({zoom:1,panX:0,panY:0,drag:null as null|{x:number;y:number;px:number;py:number}});const history=useRef<Dict[]>([clone(defaults)]);const histIndex=useRef(0);const [resize,setResize]=useState(0)
+ const [token,setToken]=useState(localStorage.getItem('katai-token')||'');const [authorized,setAuthorized]=useState(false);const [project,setProject]=useState<Dict>(clone(defaults));const [projectId,setProjectId]=useState('');const [mode,setMode]=useState('Soil');const [selected,setSelected]=useState<{key:string,index:number}|null>(null);const [cursorPos,setCursorPos]=useState<Point|null>(null);const [tool,setTool]=useState('select');const [monitorPoint,setMonitorPoint]=useState<Point|null>(null);const [draft,setDraft]=useState<Point[]>([]);const [mesh,setMesh]=useState<Mesh|null>(null);const [isMeshing,setIsMeshing]=useState(false);const [results,setResults]=useState<PhaseResult[]>([]);const [phase,setPhase]=useState(0);const [structKind,setStructKind]=useState(0);const structKindRef=useRef(0);const [dropHighlight,setDropHighlight]=useState<{key:string,index:number}|null>(null);const [resultField,setResultField]=useState('Total Displacement |u| [mm]');const [job,setJob]=useState<Dict|null>(null);const [log,setLog]=useState('');const [notice,setNotice]=useState('Ready');const [validation,setValidation]=useState<Dict|null>(null);const [scale,setScale]=useState(1);const [grid,setGrid]=useState(true);const [snap,setSnap]=useState(true);const [showArrows,setShowArrows]=useState(false);const [vectorDir,setVectorDir]=useState<'total'|'x'|'y'>('total');const [showContours,setShowContours]=useState(false);const [showMeshLines,setShowMeshLines]=useState(true);const [showDeformed,setShowDeformed]=useState(true);const [deformScale,setDeformScale]=useState(1.0);const [tab,setTab]=useState<'Model'|'Output'>('Model');const [outputView,setOutputView]=useState<'mesh'|'structures'>('mesh');const [structForceType,setStructForceType]=useState<'M'|'Q'|'N'|'u'>('M');const [selectedStructIdx,setSelectedStructIdx]=useState<number>(-1);const [structDiagScale,setStructDiagScale]=useState<number>(0.02);const [treeOpen,setTreeOpen]=useState(true);const [openMenu,setOpenMenu]=useState('');const [helpOpen,setHelpOpen]=useState(false);const canvasRef=useRef<HTMLCanvasElement>(null);const wrapRef=useRef<HTMLDivElement>(null);const view=useRef({zoom:1,panX:0,panY:0,drag:null as null|{x:number;y:number;px:number;py:number}});const history=useRef<Dict[]>([clone(defaults)]);const histIndex=useRef(0);const [resize,setResize]=useState(0)
  const request=useCallback(async(path:string,init:RequestInit={})=>{const response=await fetch(path,{...init,headers:{Authorization:`Bearer ${token}`,...(init.body?{'Content-Type':'application/json'}:{}),...init.headers}});if(response.status===401)throw Error('Access token is not accepted');if(!response.ok){const body=await response.json().catch(()=>({}));throw Error(body.detail||`HTTP ${response.status}`)}return response.status===204?null:response.json()},[token])
  const setProjectSafe=(next:Dict)=>{history.current=history.current.slice(0,histIndex.current+1);history.current.push(clone(next));histIndex.current++;setProject(next);setValidation(null);setMesh(next.explicit_mesh||null);setResults([]);setPhase(0)}
+ // Busy/freeze (plaxis-parity plan Phase 2, Task 2.1): one source of truth for
+ // "a backend call is in flight". While set, a full-screen overlay blocks the
+ // whole workspace (pointer, keyboard, wheel) so no second request can be fired
+ // and the model cannot change under a running operation. runBusy wraps an async
+ // backend action; nested calls keep the first (outermost) label.
+ const [busy,setBusy]=useState<{kind:string;label:string}|null>(null)
+ const busyRef=useRef<{kind:string;label:string}|null>(null)
+ // Cross section (plaxis-parity Phase 5): a line along which the active result
+ // field is sampled. sectionMode means the next two Output clicks set the line.
+ const [sectionMode,setSectionMode]=useState(false)
+ const [sectionLine,setSectionLine]=useState<[Point,Point]|null>(null)
+ const [sectionDraft,setSectionDraft]=useState<Point|null>(null)
+ const runBusy=useCallback(async <T,>(kind:string,label:string,fn:()=>Promise<T>):Promise<T|undefined>=>{
+  if(busyRef.current){return undefined}
+  busyRef.current={kind,label};setBusy({kind,label})
+  try{return await fn()}finally{busyRef.current=null;setBusy(null)}
+ },[])
  const moveHistory=(direction:number)=>{const target=Math.max(0,Math.min(history.current.length-1,histIndex.current+direction));if(target!==histIndex.current){histIndex.current=target;const snap=clone(history.current[target]);setProject(snap);setValidation(null);setMesh(snap.explicit_mesh||null);setResults([]);setPhase(0)}}
  const updateObject=(key:string,index:number,value:Dict)=>setProjectSafe(key==='project'?value:key==='initial'?{...project,initial:value}:{...project,[key]:(project[key]||[]).map((x:Dict,i:number)=>i===index?value:x)})
  const active=selected?selected.key==='project'?project:selected.key==='initial'?project.initial:(project[selected.key]||[])[selected.index]:null
@@ -1368,16 +1392,38 @@ function App(){
  async function save(){return ensureSaved()}
  async function reloadSaved(){if(!projectId){setNotice('This project has no saved server copy yet');return}try{const r=await request(`/api/projects/${projectId}`);setProject(clone(r.project));history.current=[clone(r.project)];histIndex.current=0;setValidation(null);setMesh(r.project?.explicit_mesh||null);setResults([]);setPhase(0);setNotice('Saved server copy reloaded')}catch(e){setNotice(String(e))}}
  async function openFile(e:ChangeEvent<HTMLInputElement>){const f=e.target.files?.[0];if(!f)return;try{const data=JSON.parse(await f.text());const r=await request('/api/projects/import',{method:'POST',body:JSON.stringify(data)});setProjectId(r.id);setProject(clone(r.project));history.current=[clone(r.project)];histIndex.current=0;setResults([]);setMesh(r.project?.explicit_mesh||null);setTab('Model');setNotice(`Opened ${f.name}`)}catch(err){setNotice(String(err))}e.target.value=''}
- async function loadExample(source:string|Dict){try{let data:Dict;if(typeof source==='string'){const response=await fetch(source);if(!response.ok)throw Error('Tutorial example is unavailable');data=await response.json()}else data=source;const r=await request('/api/projects/import',{method:'POST',body:JSON.stringify(data)});setProjectId(r.id);setProject(clone(r.project));history.current=[clone(r.project)];histIndex.current=0;setResults([]);setMesh(r.project?.explicit_mesh||null);setSelected(null);setTab('Model');setNotice(`Loaded ${data.name}`)}catch(e){setNotice(String(e))}}
  async function exportFile(){if(!projectId){const blob=new Blob([JSON.stringify(project,null,2)],{type:'application/json'});download(blob,'project.k2d');return}const r=await fetch(`/api/projects/${projectId}/export`,{headers:{Authorization:`Bearer ${token}`}});if(!r.ok){setNotice('Project export failed');return}download(await r.blob(),'project.k2d')}
  function download(blob:Blob,name:string){const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href)}
- async function validate(){const id=await ensureSaved();if(!id)return;try{const r=await request(`/api/projects/${id}/validate`,{method:'POST'});setValidation(r);setNotice(r.ok?'Model validation passed':'Model has validation issues')}catch(e){setNotice(String(e))}}
- async function generateMesh(data:Dict=project){setIsMeshing(true);try{const id=await ensureSaved(data);if(!id)return;const r=await request(`/api/projects/${id}/mesh`,{method:'POST'});if(r.mesh){setMesh(r.mesh);setProjectSafe({...data,explicit_mesh:r.mesh});const genLabel=r.generator==='plaxis'?' · PLAXIS Style':'';setNotice(`Mesh ready · ${r.mesh.node_count} nodes · ${r.mesh.element_count} elements · Tri${r.mesh.nodes_per_element}${genLabel}`)}else if(r.error){setNotice(r.error)}}catch(e){setNotice(String(e))}finally{setIsMeshing(false)}}
+ async function validate(){await runBusy('validate','Validating model…',async()=>{const id=await ensureSaved();if(!id)return;try{const r=await request(`/api/projects/${id}/validate`,{method:'POST'});setValidation(r);setNotice(r.ok?'Model validation passed':'Model has validation issues')}catch(e){setNotice(String(e))}})}
+ async function generateMesh(data:Dict=project){await runBusy('mesh','Generating finite element mesh…',async()=>{setIsMeshing(true);try{const id=await ensureSaved(data);if(!id)return;const r=await request(`/api/projects/${id}/mesh`,{method:'POST'});if(r.mesh){setMesh(r.mesh);setProjectSafe({...data,explicit_mesh:r.mesh});const genLabel=r.generator==='plaxis'?' · PLAXIS Style':'';setNotice(`Mesh ready · ${r.mesh.node_count} nodes · ${r.mesh.element_count} elements · Tri${r.mesh.nodes_per_element}${genLabel}`)}else if(r.error){setNotice(r.error)}}catch(e){setNotice(String(e))}finally{setIsMeshing(false)}})}
  async function autoMesh(presetOverride?: string | unknown){const currentPreset = typeof presetOverride === 'string' ? presetOverride : (project.mesh?.preset || 'Medium');const next={...project,mesh:{...project.mesh,auto_refine:true,generator:'plaxis',preset:currentPreset,order:project.mesh?.order||6}};setProjectSafe(next);await generateMesh(next)}
- async function calculate(){if(job&&['queued','running','cancelling'].includes(job.status)){setNotice('Calculation is already queued or running');return}const toSave=(mesh&&!project.explicit_mesh)?{...project,explicit_mesh:mesh}:project;const id=await ensureSaved(toSave);if(!id)return;try{const r=await request(`/api/projects/${id}/jobs`,{method:'POST',body:JSON.stringify(monitorPoint?{monitor:{x:monitorPoint[0],y:monitorPoint[1]}}:{})});setJob(r);setTab('Output');setPhase(0);setNotice(r.status==='running'?'Calculation is running':'Calculation queued')}catch(e){setNotice(String(e))}}
+ // Client-side pre-Calculate gate (plaxis-parity Phase 4, Task 4.4): cheap,
+ // project-level checks that catch the common "cannot calculate" cases before a
+ // job is even submitted, with field paths so the issues are clickable. The
+ // server's validator (run on save) remains the authority for the full contract.
+ function preflight(p:Dict):Dict[]{
+  const issues:Dict[]=[]
+  const polys=p.polygons||[]
+  if(!polys.length)issues.push({severity:'error',path:'polygons',message:'No soil region has been drawn. Draw at least one soil polygon before calculating.',source:'preflight'})
+  polys.forEach((poly:Dict,i:number)=>{
+   const mi=Number(poly.material)
+   if(poly.material==null||mi<0||mi>=(p.materials||[]).length)
+    issues.push({severity:'error',path:`polygons[${i}].material`,message:`Soil region "${poly.name||`Polygon ${i+1}`}" has no valid material assigned. Drag a soil material onto it.`,source:'preflight'})
+  })
+  if(!(p.materials||[]).length)issues.push({severity:'error',path:'materials',message:'No soil material is defined. Add at least one material.',source:'preflight'})
+  // Initial phase must activate at least one soil region (something to solve).
+  const initActive=(p.initial?.poly||[]).some((v:any)=>Number(v)>0)
+  if(polys.length&&!initActive&&(p.initial?.poly||[]).length)
+   issues.push({severity:'warning',path:'initial.poly',message:'The initial phase has no active soil region. The initial stresses will be trivial.',source:'preflight'})
+  return issues
+ }
+ async function calculate(){if(job&&['queued','running','cancelling'].includes(job.status)){setNotice('Calculation is already queued or running');return}
+  const pf=preflight(project)
+  if(pf.some(i=>i.severity==='error')){setValidation({ok:false,errors:pf.filter(i=>i.severity==='error').length,warnings:pf.filter(i=>i.severity==='warning').length,issues:pf,stdout:'',stderr:''});setNotice('Cannot calculate yet — fix the highlighted issues');return}
+  await runBusy('calculate','Submitting calculation…',async()=>{const toSave=(mesh&&!project.explicit_mesh)?{...project,explicit_mesh:mesh}:project;const id=await ensureSaved(toSave);if(!id)return;try{const r=await request(`/api/projects/${id}/jobs`,{method:'POST',body:JSON.stringify(monitorPoint?{monitor:{x:monitorPoint[0],y:monitorPoint[1]}}:{})});setJob(r);setTab('Output');setPhase(0);setNotice(r.status==='running'?'Calculation is running':'Calculation queued')}catch(e){setNotice(String(e))}})}
  async function cancel(){if(job)try{await request(`/api/jobs/${job.id}`,{method:'DELETE'});setNotice('Cancellation requested')}catch(e){setNotice(String(e))}}
  const loadResults=useCallback(async(forProjectId=projectId,preserveNotice=false)=>{if(!forProjectId)return;try{const r=await request(`/api/projects/${forProjectId}/results`);if(r.results?.phases?.length){setResults(r.results.phases);setPhase(Math.max(0,r.results.phases.length-1));if(r.results.phases?.[0]?.mesh){setMesh(r.results.phases[0].mesh)}if(!preserveNotice)setNotice('Results loaded from KATAI .res')}}catch(e){if(!preserveNotice)setNotice(String(e))}},[projectId,request])
- useEffect(()=>{if(!authorized||!job)return;const t=setInterval(async()=>{try{const s=await request(`/api/jobs/${job.id}`);setJob(s);setLog(s.log_text||'');if(s.status==='running'||s.status==='queued'){const lastSample=s.progress?.samples?.at(-1);if(lastSample?.phase_index!=null)setPhase(lastSample.phase_index)}if(['completed','failed','cancelled','interrupted'].includes(s.status)){clearInterval(t);if(['completed','failed'].includes(s.status)&&s.project_id===projectId)loadResults(s.project_id,s.status==='failed');setNotice(s.message)}}catch(e){setNotice(String(e))}},1000);return()=>clearInterval(t)},[authorized,job?.id,projectId,request,loadResults])
+ useEffect(()=>{if(!authorized||!job)return;const t=setInterval(async()=>{try{const s=await request(`/api/jobs/${job.id}`);setJob(s);setLog(s.log_text||'');if(s.status==='running'||s.status==='queued'){const lastSample=s.progress?.samples?.at(-1);if(lastSample?.phase_index!=null)setPhase(lastSample.phase_index)}if(['completed','failed','cancelled','interrupted','timeout'].includes(s.status)){clearInterval(t);if(['completed','failed','timeout'].includes(s.status)&&s.project_id===projectId)loadResults(s.project_id,s.status!=='completed');setNotice(s.message)}}catch(e){setNotice(String(e))}},1000);return()=>clearInterval(t)},[authorized,job?.id,projectId,request,loadResults])
  useEffect(()=>{const ro=new ResizeObserver(()=>setResize(v=>v+1));if(wrapRef.current)ro.observe(wrapRef.current);return()=>ro.disconnect()},[])
  const activeResult=results[phase];
  const activeStrains=useMemo(()=>{
@@ -1549,6 +1595,41 @@ function App(){
   if(!values.length)return {min:0,max:0};
   return {min:Math.min(...values),max:Math.max(...values)}
  },[activeResult,resultField,activeStrains,phase,project])
+
+ // Cross-section profile: sample the active result field at 60 points along the
+ // section line, each value inverse-distance weighted from the nearest mesh
+ // nodes (robust, element-free). Distance s is measured from the first point.
+ const sectionProfile=useMemo(()=>{
+  if(!sectionLine||!activeResult?.mesh?.node_count)return null
+  const m=activeResult.mesh
+  const [a,b]=sectionLine
+  const dx=b[0]-a[0],dy=b[1]-a[1],len=Math.hypot(dx,dy)||1
+  const N=60
+  const pts:{s:number;x:number;y:number;v:number}[]=[]
+  for(let k=0;k<=N;k++){
+   const t=k/N,x=a[0]+t*dx,y=a[1]+t*dy
+   // inverse-distance weighting from nodes within a search radius
+   let num=0,den=0,nearest=-1,nd=Infinity
+   for(let i=0;i<m.node_count;i++){
+    const d2=(m.x[i]-x)**2+(m.y[i]-y)**2
+    if(d2<nd){nd=d2;nearest=i}
+    if(d2<1e-12){num=getScalar(activeResult,i);den=1;nearest=-1;break}
+    const w=1/d2
+    num+=w*getScalar(activeResult,i);den+=w
+   }
+   const v=nearest>=0&&den===0?getScalar(activeResult,nearest):(den?num/den:0)
+   pts.push({s:t*len,x,y,v})
+  }
+  return {pts,len,min:Math.min(...pts.map(p=>p.v)),max:Math.max(...pts.map(p=>p.v))}
+ },[sectionLine,activeResult,resultField,activeStrains,phase,project])
+
+ function downloadSection(){
+  if(!sectionProfile)return
+  const header=`# cross section: ${resultField}\n# phase: ${activeResult?.name||phase}\n# line: (${sectionLine![0].join(', ')}) -> (${sectionLine![1].join(', ')})\ns,x,y,value\n`
+  const body=sectionProfile.pts.map(p=>`${p.s.toFixed(6)},${p.x.toFixed(6)},${p.y.toFixed(6)},${p.v.toFixed(6)}`).join('\n')
+  const blob=new Blob([header+body+'\n'],{type:'text/csv'})
+  download(blob,`cross-section-${resultField.replace(/[^a-z0-9]+/gi,'_').toLowerCase()}.csv`)
+ }
  const applyStructAutoScale = useCallback((forceType = structForceType) => {
   if (!activeResult?.struct_forces?.length) return;
   let maxVal = 0;
@@ -2394,8 +2475,19 @@ function App(){
      ctx.beginPath(); ctx.moveTo(0, curSy); ctx.lineTo(RULER_SIZE, curSy); ctx.stroke();
     }
    }
+   // Cross-section line overlay (Output)
+   if(tab==='Output'&&sectionLine){
+    const [a,b]=sectionLine
+    const [ax,ay]=tr(a[0],a[1]),[bx,by]=tr(b[0],b[1])
+    ctx.save();ctx.strokeStyle='#dc2626';ctx.lineWidth=2;ctx.setLineDash([6,4])
+    ctx.beginPath();ctx.moveTo(ax,ay);ctx.lineTo(bx,by);ctx.stroke();ctx.setLineDash([])
+    for(const [px,py] of [[ax,ay],[bx,by]]){ctx.fillStyle='#dc2626';ctx.beginPath();ctx.arc(px,py,4,0,2*Math.PI);ctx.fill()}
+    ctx.fillStyle='#dc2626';ctx.font='11px sans-serif';ctx.fillText('A',ax+6,ay-6);ctx.fillText('B',bx+6,by-6)
+    ctx.restore()
+   }
+   if(tab==='Output'&&sectionDraft){const [dx,dy]=tr(sectionDraft[0],sectionDraft[1]);ctx.save();ctx.fillStyle='#dc2626';ctx.beginPath();ctx.arc(dx,dy,4,0,2*Math.PI);ctx.fill();ctx.restore()}
    ctx.restore();
- },[canvasTransform,resize,project,mesh,activeResult,grid,draft,resultField,bounds,showArrows,vectorDir,showContours,showMeshLines,showDeformed,deformScale,activeStrains,monitorPoint,dropHighlight,tab,phase,mode,active,outputView,structForceType,structDiagScale,selectedStructIdx,cursorPos])
+ },[canvasTransform,resize,project,mesh,activeResult,grid,draft,resultField,bounds,showArrows,vectorDir,showContours,showMeshLines,showDeformed,deformScale,activeStrains,monitorPoint,dropHighlight,tab,phase,mode,active,outputView,structForceType,structDiagScale,selectedStructIdx,cursorPos,sectionLine,sectionDraft])
  function screenToWorld(cx:number,cy:number):Point{const t=canvasTransform()!;let x=(cx-t.ox)/t.base,y=(t.oy-cy)/t.base;const step=Number(project.mesh?.elem_size)||.25;if(snap&&tab==='Model'){x=Math.round(x/step)*step;y=Math.round(y/step)*step}return [Number(x.toFixed(4)),Number(y.toFixed(4))]}
  function canvasDown(e:ReactPointerEvent<HTMLCanvasElement>){
   const r=e.currentTarget.getBoundingClientRect(),x=e.clientX-r.left,y=e.clientY-r.top;
@@ -2408,6 +2500,12 @@ function App(){
   if(tab==='Output'){
    if(e.button===0){
     const point=screenToWorld(x,y);
+    // Cross-section tool: first click sets the start, second completes the line.
+    if(sectionMode){
+     if(!sectionDraft){setSectionDraft(point);setNotice('Cross section: click the second point')}
+     else{setSectionLine([sectionDraft,point]);setSectionDraft(null);setSectionMode(false);setNotice('Cross section placed')}
+     return;
+    }
     const structs=project.structs||[];
     let foundStructIdx=-1;
     for(let i=structs.length-1;i>=0;i--){
@@ -2478,9 +2576,7 @@ function App(){
  function removeSelected(){if(!selected)return;if(selected.key==='project')return;if(selected.key==='initial'){setSelected(null);return}setProjectSafe({...project,[selected.key]:project[selected.key].filter((_:unknown,i:number)=>i!==selected.index)});setSelected(null)}
  function zoom(v:number){view.current.zoom=Math.max(.25,Math.min(8,view.current.zoom*v));setScale(view.current.zoom);setResize(n=>n+1)}
  const menuItems:Record<string,[string,()=>unknown][]>= {
-  File:[['New project',()=>create()],['Save project',save],['Export .k2d',exportFile],['Browse presets...',()=>setPresetModalOpen(true)],['Tutorial 1 · rigid footing',()=>loadExample('/examples/tutorial1-rigid.k2d')],['Tutorial 1 · flexible footing',()=>loadExample('/examples/tutorial1-flexible.k2d')]],
-  Studies:[['Browse all studies & presets...',()=>setPresetModalOpen(true)],...studyExamples.map(example=>[example.project.name,()=>loadExample(example.project)] as [string,()=>unknown])],
-  Examples:corpusExamples.map(example=>[example.project.name,()=>loadExample(example.project)]),
+  File:[['New project',()=>create()],['Save project',save],['Export .k2d',exportFile]],
   Edit:[['Undo',()=>moveHistory(-1)],['Redo',()=>moveHistory(1)],['Delete selected object',removeSelected]],
   View:[['Toggle grid',()=>setGrid(!grid)],['Toggle mesh lines',()=>setShowMeshLines(!showMeshLines)],['Toggle snap',()=>setSnap(!snap)],['Fit model',()=>{view.current.zoom=1;view.current.panX=0;view.current.panY=0;setResize(n=>n+1)}]],
   Tools:[['Validate model',validate],['Generate mesh',generateMesh],['Calculate',calculate]],
@@ -2493,18 +2589,44 @@ function App(){
  function enumCaption(key:string,n:number){const names:Record<string,string[]>={model:['Linear Elastic (LE)','Mohr-Coulomb (MC)','Hardening Soil (HS)','HS-Small (HSS)','Soft Soil (SS)','Soft Soil Creep (SSC)','Hoek-Brown (HB)','Modified Cam-Clay (MCC)','NGI-ADP Anisotropic','Jointed Rock (JR)'],drainage:['Drained','Undrained (A)','Non-porous','Undrained (B)','Undrained (C)'],kind:['Plate','Anchor','Geogrid','Embedded beam','Interface'],type:['Plastic (Staged construction)','Safety (Phi-c reduction)','Consolidation','Transient flow','Fully coupled','Dynamic (Seismic)'],initial_procedure:['K0 Procedure (Jaky / Explicit)','Gravity Loading','Direct Safety (Phi-c Reduction)','Groundwater Flow Only'],design:['None (characteristic)','Eurocode 7 - DA1 Comb. 1','Eurocode 7 - DA1 Comb. 2','Eurocode 7 - DA2','Eurocode 7 - DA3','TBDY 2018 (Static)','TBDY 2018 (Seismic)'],edge_flow:['Closed (impermeable)','Prescribed head','Seepage face','Prescribed flux'],edge_bc:['Free','Normally fixed','Horizontally fixed','Vertically fixed','Fully fixed']};return names[key]?.[n]||`Value ${n}`}
  function forceDiagram(stations:Dict[],field:string){if(!stations?.length)return null;const values=stations.map(s=>Number(s[field]||0)),max=Math.max(1e-12,...values.map(Math.abs)),points=values.map((v,i)=>`${8+i*184/Math.max(1,values.length-1)},${34-v/max*26}`).join(' ');return <svg viewBox="0 0 200 40" className="forcediagram" role="img" aria-label={`${field} force diagram`}><line x1="5" y1="34" x2="195" y2="34" stroke="#cad4dc"/><polyline points={points} fill="none" stroke="#b04f39" strokeWidth="1.8"/><text x="5" y="10">{field} · ±{max.toPrecision(3)}</text></svg>}
 
- const filteredPresets=useMemo(()=>{
-  return allPresets.filter(p=>{
-   const matchCat=presetCategory==='All'||p.category===presetCategory
-   const matchSearch=!presetSearch||p.project.name.toLowerCase().includes(presetSearch.toLowerCase())||p.filename.toLowerCase().includes(presetSearch.toLowerCase())
-   return matchCat&&matchSearch
-  })
- },[presetCategory,presetSearch])
 
+ // Map a validation issue's JSON path (e.g. "materials[2].Rf", "phases[0].type",
+ // "structs[1].iface_kn") to the mode + selected object that owns it, so clicking
+ // the issue navigates there (plaxis-parity Phase 4, Task 4.1). Returns true if it
+ // could navigate.
+ const issueModeFor:Record<string,string>={materials:'Soil',polygons:'Soil',boreholes:'Soil',strata:'Soil',structs:'Structures',plates:'Structures',anchors:'Structures',geogrids:'Structures',embedded:'Structures',loads:'Structures',disps:'Structures',hydros:'Flow Conditions',phases:'Staged Construction',initial:'Staged Construction',mesh:'Mesh'}
+ function goToIssue(path:string){
+  if(!path){setTab('Model');return}
+  const m=path.match(/^([A-Za-z_]+)(?:\[(\d+)\])?/)
+  if(!m){setTab('Model');return}
+  const key=m[1];const idx=m[2]!=null?Number(m[2]):0
+  setTab('Model')
+  const targetMode=issueModeFor[key]
+  if(targetMode)setMode(targetMode)
+  if(key==='initial'){setSelected({key:'initial',index:0})}
+  else if(key==='mesh'){setSelected({key:'mesh',index:0})}
+  else if(key in issueModeFor&&Array.isArray(project[key])){setSelected({key,index:idx})}
+  else{setSelected({key:'project',index:0})}
+ }
+ // Phase status icon for the Phases explorer (PLAXIS-style: to-be-calculated /
+ // running / OK / assumption / failed). resultIndex 0 = Initial phase, i+1 = phase i.
+ const runningPhaseIndex=(job&&['running'].includes(job.status))?(job.progress?.samples?.at(-1)?.phase_index):undefined
+ function phaseStatus(resultIndex:number){
+  const r=results[resultIndex] as Dict|undefined
+  const busyHere=runningPhaseIndex!=null&&Number(runningPhaseIndex)===resultIndex
+  let cls='ps-todo',title='To be calculated',glyph='▸'
+  if(busyHere){cls='ps-running';title='Calculating…';glyph='◴'}
+  else if(r){
+   if(r.ok){cls='ps-ok';title='Calculated OK';glyph='✓'}
+   else{cls='ps-fail';title='Not converged / failed';glyph='✕'}
+   if(r.ok&&(r.diagnostics||[]).some((d:Dict)=>d.severity==='warning')){cls='ps-warn';title='Calculated with an assumption';glyph='!'}
+  }
+  return <span className={`phase-status ${cls}`} title={title} aria-label={title}>{glyph}</span>
+ }
  if(!authorized)return <div className="auth"><div className="authcard"><div className="brandmark">K</div><h1>KATAI 2D</h1><p>Geotechnical finite element analysis</p><form onSubmit={authorize}><label>Owner access token<input autoFocus type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="Enter server access token"/></label><button className="primary">Connect</button></form><small>{notice}</small></div></div>
  return <div className="app"><header className="titlebar"><div className="brand"><span className="brandmark small">K</span><span>KATAI 2D</span><i>GEOTECHNICAL ANALYSIS</i></div><div className="titlecenter">{project.name||'Untitled project'} <span>— {tab==='Output'?'Output':'Input'}</span></div><div className="titleactions"><button title="Help" onClick={()=>setHelpOpen(true)}><CircleHelp size={16}/></button><span className="userbadge">OWNER</span></div></header>
-  <nav className="menubar">{['File','Studies','Examples','Edit','View','Tools','Help'].map(m=><div className="menuposition" key={m}><button onClick={()=>setOpenMenu(openMenu===m?'':m)}>{m}</button>{openMenu===m&&<div className="menupopup">{menuItems[m].map(([label,fn]:any)=><button key={label} onClick={()=>{setOpenMenu('');fn()}}>{label}</button>)}</div>}</div>)}<div className="quick"><button onClick={()=>setPresetModalOpen(true)} title="Browse all presets & studies"><FolderOpen/> Presets</button><button onClick={()=>create()} title="New project"><FilePlus2/></button><label title="Open .k2d"><Upload/><input type="file" accept=".k2d,.json,application/json" onChange={openFile}/></label><button onClick={save} title="Save"><Save/></button><button onClick={exportFile} title="Export .k2d"><Download/></button><span className="sep"/><button title="Undo" onClick={()=>moveHistory(-1)}><Undo2/></button><button title="Redo" onClick={()=>moveHistory(1)}><Redo2/></button><span className="sep"/><button onClick={validate} title="Validate"><Check/></button><button className="run" onClick={calculate} disabled={!!job&&['queued','running','cancelling'].includes(job.status)} title="Calculate"><Play size={15} fill="currentColor"/> Calculate</button></div><div className="saved"><span className="live-dot"/> {projectId?'Server project':'Unsaved'}</div></nav>
-  <div className="ribbon"><div className="shellswitch"><button className={tab==='Model'?'on':''} onClick={()=>setTab('Model')}><Layers size={15}/> Input</button><button className={tab==='Output'?'on':''} onClick={()=>{setDraft([]);setTab('Output');if(!results.length)loadResults()}}><ChartNoAxesCombined size={15}/> Output</button></div>{tab==='Model'?<><div className="ribbon-group"><span>Mode</span><div className="mode-buttons">{modes.map(m=><button key={m} className={mode===m?'selected':''} onClick={()=>{setMode(m);if(m==='Mesh'){setSelected({key:'mesh',index:0})}else if(m==='Staged Construction'&&(!selected||(selected.key!=='initial'&&selected.key!=='phases'))){setSelected(project.phases?.length?{key:'phases',index:0}:{key:'initial',index:0})}}}>{m}</button>)}</div></div><button className={`outline axisym-toggle ${project.axisymmetric?'axisym-on':''}`} onClick={()=>setProjectSafe({...project,axisymmetric:!project.axisymmetric})} title="Toggle Axisymmetric analysis (r-z) vs Plane Strain (x-y)"><Activity size={14}/> {project.axisymmetric?'Axisymmetric (r-z)':'Plane Strain (x-y)'}</button><div className="ribbon-tools compact"><button className={grid?'selected':''} onClick={()=>setGrid(!grid)} title="Grid"><Grid2X2/></button><button className={snap?'selected':''} onClick={()=>setSnap(!snap)} title="Snap"><Crosshair/></button><button onClick={()=>zoom(1.2)} title="Zoom in"><ZoomIn/></button><button onClick={()=>zoom(.83)} title="Zoom out"><ZoomOut/></button><button onClick={()=>{view.current.zoom=1;view.current.panX=0;view.current.panY=0;setScale(1);setResize(n=>n+1)}} title="Fit model"><Ruler/></button></div></>:<><div className="ribbon-group"><span>View</span><div className="output-view-toggle"><button type="button" className={`output-view-btn ${outputView==='mesh'?'active':''}`} onClick={()=>setOutputView('mesh')}>Soil & Mesh</button><button type="button" className={`output-view-btn ${outputView==='structures'?'active':''}`} onClick={()=>{setOutputView('structures');applyStructAutoScale(structForceType)}}>Structure Forces</button></div></div><div className="ribbon-group"><span>Phase</span><select className="output-select" value={phase} onChange={e=>setPhase(Number(e.target.value))}>{results.map((p,i)=><option key={i} value={i}>{`${i+1} · ${p.name}`}</option>)}</select></div>{outputView==='structures'?(<><div className="ribbon-group"><span>Component</span><select className="output-select" value={structForceType} onChange={e=>{const val=e.target.value as 'M'|'Q'|'N'|'u';setStructForceType(val);applyStructAutoScale(val)}}><option value="M">Bending Moment M [kNm/m]</option><option value="Q">Shear Force Q [kN/m]</option><option value="N">Axial Force N [kN/m]</option><option value="u">Displacement |u| [mm]</option></select></div>{(activeResult?.struct_forces||[]).length>1&&<div className="ribbon-group"><span>Structure</span><select className="output-select" value={selectedStructIdx} onChange={e=>setSelectedStructIdx(Number(e.target.value))}><option value={-1}>All structures</option>{(activeResult?.struct_forces||[]).map((sf:Dict,i:number)=><option key={i} value={i}>{sf.name||`Structure ${i+1}`}</option>)}</select></div>}<div className="ribbon-group"><span>Diagram Scale</span><div className="deform-scale-group"><input type="number" step="any" min="0" className="deform-scale-input" value={structDiagScale} onChange={e=>setStructDiagScale(Math.max(0,parseFloat(e.target.value)||0))} title="Custom diagram scale factor"/><select className="deform-scale-select" value={[0.001,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,50].includes(structDiagScale)?structDiagScale:'custom'} onChange={e=>{if(e.target.value!=='custom')setStructDiagScale(Number(e.target.value))}}><option value="0.001">0.001x</option><option value="0.005">0.005x</option><option value="0.01">0.010x</option><option value="0.02">0.020x</option><option value="0.05">0.050x</option><option value="0.1">0.100x</option><option value="0.2">0.200x</option><option value="0.5">0.500x</option><option value="1">1.000x</option><option value="5">5.000x</option><option value="10">10.00x</option><option value="50">50.00x</option><option value="custom" disabled hidden>Custom</option></select><button type="button" className="deform-scale-auto-btn" onClick={()=>applyStructAutoScale(structForceType)} title="Auto-scale diagram to visible size">Auto</button></div></div></>):(<><div className="ribbon-group"><span>Result field</span><select className="output-select" value={resultField} onChange={e=>setResultField(e.target.value)}>{outputGroups.filter(g=>g.id!=='structure-forces').flatMap(g=>g.fields).map(x=><option key={x} value={x}>{x}</option>)}</select></div><div className="ribbon-group"><span>Mesh</span><div className="mesh-toggle-group"><button type="button" className={`mesh-toggle-btn ${!showDeformed?'active':''}`} onClick={()=>setShowDeformed(false)}>Undeformed</button><button type="button" className={`mesh-toggle-btn ${showDeformed?'active':''}`} onClick={()=>setShowDeformed(true)}>Deformed</button></div></div>{showDeformed&&<div className="ribbon-group"><span>Scale</span><div className="deform-scale-group"><input type="number" step="any" min="0" className="deform-scale-input" value={deformScale} onChange={e=>setDeformScale(Math.max(0,parseFloat(e.target.value)||0))} title="Custom scale factor" /><select className="deform-scale-select" value={[1,5,10,20,50,100,200,500].includes(deformScale)?deformScale:'custom'} onChange={e=>{if(e.target.value!=='custom')setDeformScale(Number(e.target.value))}}><option value="1">1x</option><option value="5">5x</option><option value="10">10x</option><option value="20">20x</option><option value="50">50x</option><option value="100">100x</option><option value="200">200x</option><option value="500">500x</option><option value="custom" disabled hidden>Custom</option></select><button type="button" className="deform-scale-auto-btn" onClick={applyAutoScale} title="Auto-scale deformation to visible magnitude">Auto</button></div></div>}<div className="ribbon-tools compact"><button className={showMeshLines?'selected':''} onClick={()=>setShowMeshLines(!showMeshLines)} title="Toggle mesh lines"><Grid2X2/></button><button className={showContours?'selected':''} onClick={()=>setShowContours(!showContours)} title="Toggle contour lines"><Activity/></button><button className={showArrows?'selected':''} onClick={()=>setShowArrows(!showArrows)} title="Toggle displacement arrows"><Crosshair/></button>{showArrows&&<div className="vdir-ribbon-group" title="Arah vektor perpindahan"><button type="button" className={`vdir-ribbon-btn ${vectorDir==='total'?'active':''}`} onClick={()=>setVectorDir('total')}>Total</button><button type="button" className={`vdir-ribbon-btn ${vectorDir==='x'?'active':''}`} onClick={()=>setVectorDir('x')}>X</button><button type="button" className={`vdir-ribbon-btn ${vectorDir==='y'?'active':''}`} onClick={()=>setVectorDir('y')}>Y</button></div>}</div></>)}<button className="outline" onClick={()=>loadResults()}>Refresh results</button></>}</div>
+  <nav className="menubar">{['File','Edit','View','Tools','Help'].map(m=><div className="menuposition" key={m}><button onClick={()=>setOpenMenu(openMenu===m?'':m)}>{m}</button>{openMenu===m&&<div className="menupopup">{menuItems[m].map(([label,fn]:any)=><button key={label} onClick={()=>{setOpenMenu('');fn()}}>{label}</button>)}</div>}</div>)}<div className="quick"><button onClick={()=>create()} title="New project"><FilePlus2/></button><label title="Open .k2d"><Upload/><input type="file" accept=".k2d,.json,application/json" onChange={openFile}/></label><button onClick={save} title="Save"><Save/></button><button onClick={exportFile} title="Export .k2d"><Download/></button><span className="sep"/><button title="Undo" onClick={()=>moveHistory(-1)}><Undo2/></button><button title="Redo" onClick={()=>moveHistory(1)}><Redo2/></button><span className="sep"/><button onClick={validate} title="Validate"><Check/></button><button className="run" onClick={calculate} disabled={!!job&&['queued','running','cancelling'].includes(job.status)} title="Calculate"><Play size={15} fill="currentColor"/> Calculate</button></div><div className="saved"><span className="live-dot"/> {projectId?'Server project':'Unsaved'}</div></nav>
+  <div className="ribbon"><div className="shellswitch"><button className={tab==='Model'?'on':''} onClick={()=>setTab('Model')}><Layers size={15}/> Input</button><button className={tab==='Output'?'on':''} onClick={()=>{setDraft([]);setTab('Output');if(!results.length)loadResults()}}><ChartNoAxesCombined size={15}/> Output</button></div>{tab==='Model'?<><div className="ribbon-group"><span>Mode</span><div className="mode-buttons">{modes.map(m=><button key={m} className={mode===m?'selected':''} onClick={()=>{setMode(m);if(m==='Mesh'){setSelected({key:'mesh',index:0})}else if(m==='Staged Construction'&&(!selected||(selected.key!=='initial'&&selected.key!=='phases'))){setSelected(project.phases?.length?{key:'phases',index:0}:{key:'initial',index:0})}}}>{m}</button>)}</div></div><button className={`outline axisym-toggle ${project.axisymmetric?'axisym-on':''}`} onClick={()=>setProjectSafe({...project,axisymmetric:!project.axisymmetric})} title="Toggle Axisymmetric analysis (r-z) vs Plane Strain (x-y)"><Activity size={14}/> {project.axisymmetric?'Axisymmetric (r-z)':'Plane Strain (x-y)'}</button><div className="ribbon-tools compact"><button className={grid?'selected':''} onClick={()=>setGrid(!grid)} title="Grid"><Grid2X2/></button><button className={snap?'selected':''} onClick={()=>setSnap(!snap)} title="Snap"><Crosshair/></button><button onClick={()=>zoom(1.2)} title="Zoom in"><ZoomIn/></button><button onClick={()=>zoom(.83)} title="Zoom out"><ZoomOut/></button><button onClick={()=>{view.current.zoom=1;view.current.panX=0;view.current.panY=0;setScale(1);setResize(n=>n+1)}} title="Fit model"><Ruler/></button></div></>:<><div className="ribbon-group"><span>View</span><div className="output-view-toggle"><button type="button" className={`output-view-btn ${outputView==='mesh'?'active':''}`} onClick={()=>setOutputView('mesh')}>Soil & Mesh</button><button type="button" className={`output-view-btn ${outputView==='structures'?'active':''}`} onClick={()=>{setOutputView('structures');applyStructAutoScale(structForceType)}}>Structure Forces</button></div></div><div className="ribbon-group"><span>Phase</span><select className="output-select" value={phase} onChange={e=>setPhase(Number(e.target.value))}>{results.map((p,i)=><option key={i} value={i}>{`${i+1} · ${p.name}`}</option>)}</select></div>{outputView==='structures'?(<><div className="ribbon-group"><span>Component</span><select className="output-select" value={structForceType} onChange={e=>{const val=e.target.value as 'M'|'Q'|'N'|'u';setStructForceType(val);applyStructAutoScale(val)}}><option value="M">Bending Moment M [kNm/m]</option><option value="Q">Shear Force Q [kN/m]</option><option value="N">Axial Force N [kN/m]</option><option value="u">Displacement |u| [mm]</option></select></div>{(activeResult?.struct_forces||[]).length>1&&<div className="ribbon-group"><span>Structure</span><select className="output-select" value={selectedStructIdx} onChange={e=>setSelectedStructIdx(Number(e.target.value))}><option value={-1}>All structures</option>{(activeResult?.struct_forces||[]).map((sf:Dict,i:number)=><option key={i} value={i}>{sf.name||`Structure ${i+1}`}</option>)}</select></div>}<div className="ribbon-group"><span>Diagram Scale</span><div className="deform-scale-group"><input type="number" step="any" min="0" className="deform-scale-input" value={structDiagScale} onChange={e=>setStructDiagScale(Math.max(0,parseFloat(e.target.value)||0))} title="Custom diagram scale factor"/><select className="deform-scale-select" value={[0.001,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,50].includes(structDiagScale)?structDiagScale:'custom'} onChange={e=>{if(e.target.value!=='custom')setStructDiagScale(Number(e.target.value))}}><option value="0.001">0.001x</option><option value="0.005">0.005x</option><option value="0.01">0.010x</option><option value="0.02">0.020x</option><option value="0.05">0.050x</option><option value="0.1">0.100x</option><option value="0.2">0.200x</option><option value="0.5">0.500x</option><option value="1">1.000x</option><option value="5">5.000x</option><option value="10">10.00x</option><option value="50">50.00x</option><option value="custom" disabled hidden>Custom</option></select><button type="button" className="deform-scale-auto-btn" onClick={()=>applyStructAutoScale(structForceType)} title="Auto-scale diagram to visible size">Auto</button></div></div></>):(<><div className="ribbon-group"><span>Result field</span><select className="output-select" value={resultField} onChange={e=>setResultField(e.target.value)}>{outputGroups.filter(g=>g.id!=='structure-forces').flatMap(g=>g.fields).map(x=><option key={x} value={x}>{x}</option>)}</select></div><div className="ribbon-group"><span>Mesh</span><div className="mesh-toggle-group"><button type="button" className={`mesh-toggle-btn ${!showDeformed?'active':''}`} onClick={()=>setShowDeformed(false)}>Undeformed</button><button type="button" className={`mesh-toggle-btn ${showDeformed?'active':''}`} onClick={()=>setShowDeformed(true)}>Deformed</button></div></div>{showDeformed&&<div className="ribbon-group"><span>Scale</span><div className="deform-scale-group"><input type="number" step="any" min="0" className="deform-scale-input" value={deformScale} onChange={e=>setDeformScale(Math.max(0,parseFloat(e.target.value)||0))} title="Custom scale factor" /><select className="deform-scale-select" value={[1,5,10,20,50,100,200,500].includes(deformScale)?deformScale:'custom'} onChange={e=>{if(e.target.value!=='custom')setDeformScale(Number(e.target.value))}}><option value="1">1x</option><option value="5">5x</option><option value="10">10x</option><option value="20">20x</option><option value="50">50x</option><option value="100">100x</option><option value="200">200x</option><option value="500">500x</option><option value="custom" disabled hidden>Custom</option></select><button type="button" className="deform-scale-auto-btn" onClick={applyAutoScale} title="Auto-scale deformation to visible magnitude">Auto</button></div></div>}<div className="ribbon-tools compact"><button className={showMeshLines?'selected':''} onClick={()=>setShowMeshLines(!showMeshLines)} title="Toggle mesh lines"><Grid2X2/></button><button className={showContours?'selected':''} onClick={()=>setShowContours(!showContours)} title="Toggle contour lines"><Activity/></button><button className={showArrows?'selected':''} onClick={()=>setShowArrows(!showArrows)} title="Toggle displacement arrows"><Crosshair/></button>{showArrows&&<div className="vdir-ribbon-group" title="Arah vektor perpindahan"><button type="button" className={`vdir-ribbon-btn ${vectorDir==='total'?'active':''}`} onClick={()=>setVectorDir('total')}>Total</button><button type="button" className={`vdir-ribbon-btn ${vectorDir==='x'?'active':''}`} onClick={()=>setVectorDir('x')}>X</button><button type="button" className={`vdir-ribbon-btn ${vectorDir==='y'?'active':''}`} onClick={()=>setVectorDir('y')}>Y</button></div>}</div></>)}{outputView!=='structures'&&<button className={`outline ${sectionMode?'selected':''}`} data-testid="cross-section-toggle" onClick={()=>{setSectionMode(m=>!m);setSectionDraft(null);if(sectionLine&&!sectionMode)setSectionLine(null);setNotice('Cross section: click two points on the result')}} title="Cross section: sample the result field along a line"><Ruler size={14}/> Cross section</button>}<button className="outline" onClick={()=>loadResults()}>Refresh results</button></>}</div>
   <div className="workspace"><aside className="explorer"><div className="pane-title"><div style={{display:'flex',alignItems:'center',gap:6}}><Activity size={14} style={{color:'#2563eb'}}/><span>{tab==='Output'?'OUTPUT EXPLORER':'PROJECT EXPLORER'}</span></div><button onClick={()=>setTreeOpen(!treeOpen)} title="Toggle panel"><PanelLeftClose size={14}/></button></div>{tab==='Output'&&treeOpen&&(
    <div className="output-sidebar">
     <div className="output-phase-picker">
@@ -2589,6 +2711,7 @@ function App(){
     <div>
      <div className="treefolder"><ChevronRight size={13}/><span>Calculation phases</span><button onClick={()=>addEntity('phases')} title="Add"><Plus size={14}/></button></div>
      <button className={`treeitem phase-tree-item ${selected?.key==='initial'?'active':''}`} onClick={()=>setSelected({key:'initial',index:0})} aria-label="Initial phase">
+      {phaseStatus(0)}
       <span className="treecolor" style={{background:'#64748b'}}/>
       <span className="phase-tree-label">0. Initial Phase</span>
       <span className="phase-badge-pill phase-badge-gravity">{['K0','Gravity','Safety','Flow'][project.initial_procedure??1]||'Gravity'}</span>
@@ -2606,6 +2729,7 @@ function App(){
       const badge=typeBadgeMap[typeNum]||{label:'Plastic',cls:'phase-badge-plastic'};
       const isSelected=selected?.key==='phases'&&selected.index===i;
       return <button key={i} className={`treeitem phase-tree-item ${isSelected?'active':''}`} onClick={()=>setSelected({key:'phases',index:i})}>
+       {phaseStatus(i+1)}
        <span className="treecolor" style={{background:colors[i%colors.length]}}/>
        <span className="phase-tree-label">{`${i+1}. ${p.name||`Phase ${i+1}`}`}</span>
        <span className={`phase-badge-pill ${badge.cls}`}>{badge.label}</span>
@@ -2690,23 +2814,46 @@ function App(){
       <span>Y: <strong>{cursorPos[1].toFixed(3)} m</strong></span>
      </div>
     )}{tab==='Output'&&activeResult&&resultRange&&outputView!=='structures'&&<div className="result-legend" data-testid="result-legend" aria-label={`${resultField} legend`}><b>{resultField}</b><div className="legend-scale"><div className="legend-ramp"/><div className="legend-labels"><span>{resultRange.max.toPrecision(3)}</span><span>{resultRange.min.toPrecision(3)}</span></div></div><small>{resultField.toLowerCase().includes('displacement')?'m':'kPa'}</small></div>}{tab==='Output'&&outputView==='structures'&&structSummary&&(<div className="struct-diagram-summary" data-testid="struct-summary-card"><div className="struct-summary-title">{structSummary.title} (scaled up {structDiagScale.toFixed(4)} times)</div><div className="struct-summary-val">Maximum value = <strong className="pos">{structSummary.maxVal.toFixed(1)} {structSummary.unit}</strong> ({structSummary.maxLoc})</div><div className="struct-summary-val">Minimum value = <strong className="neg">{structSummary.minVal.toFixed(1)} {structSummary.unit}</strong> ({structSummary.minLoc})</div></div>)}<div className="canvas-hint">{tab==='Output'?(outputView==='structures'?'Structure forces diagram · Stations':showDeformed?`Deformed mesh (${deformScale}x) · Result values`:'Undeformed mesh · Result values'):draft.length?`${draft.length} points · double click to finish`:`${mode} mode · ${tool} tool · ${snap?'Snap on':'Snap off'}`}</div>{tab==='Output'&&!activeResult&&<div className="empty-canvas" data-testid="output-empty"><ChartNoAxesCombined size={36} style={{color:'#94a3b8'}}/><b>No calculation results available</b><span>Run Calculate from the toolbar or select a phase with completed results.</span></div>}{tab==='Model'&&!mesh&&!project.polygons?.length&&<div className="empty-canvas"><Layers size={30}/><b>Draw your soil geometry</b><span>Select Soil polygon, then click points on the canvas.</span><span>Double click to finish the boundary.</span></div>}</div></div>{draft.length>0&&<div className="draftbar"><span>{draft.length} vertices</span><button className="outline" onClick={()=>setDraft([])}>Cancel</button><button className="primary" onClick={finishDraft}>Finish drawing</button></div>}<div className="statusbar"><span><span className="live-dot"/> {notice}</span><span>{bounds.xmin.toFixed(1)} – {bounds.xmax.toFixed(1)} m · {bounds.ymin.toFixed(1)} – {bounds.ymax.toFixed(1)} m</span><span>{job?.status||'Idle'}</span></div></main>
-   <aside className="properties"><div className="pane-title"><span>{tab==='Output'?'CALCULATION RESULTS':'PROPERTIES'}</span><Settings2 size={14}/></div>{tab==='Output'&&activeResult?<><LiveMonitorChart job={job} phaseIndex={phase} project={project}/><div className="result-summary"><b>{activeResult.name}</b><span className={activeResult.ok?'good':'bad'}>{activeResult.ok?'Converged':'Not converged'}</span><div><small>Maximum displacement</small><strong>{Number(activeResult.max_disp).toPrecision(4)} m</strong></div>{footingReaction!==null&&<div data-testid="footing-reaction" data-kn={footingReaction}><small>Total footing reaction</small><strong>{footingReaction.toFixed(1)} kN</strong></div>}<div><small>Factor of safety</small><strong>{activeResult.fos>=0?`${activeResult.fos_lower_bound?'> ':''}${Number(activeResult.fos).toFixed(3)}`:'—'}</strong></div><div><small>Iterations</small><strong>{activeResult.iterations}</strong></div></div><details><summary>Nodal result table: all nodes</summary><div className="nodetable"><table><thead><tr><th>Node</th><th>x</th><th>y</th><th>ux</th><th>uy</th><th>σxx</th><th>σyy</th><th>p</th></tr></thead><tbody>{activeResult.mesh.x.map((x:number,i:number)=><tr key={i}><td>{i+1}</td><td>{x.toFixed(3)}</td><td>{activeResult.mesh.y[i].toFixed(3)}</td><td>{Number(activeResult.displacement?.[i*2]||0).toExponential(2)}</td><td>{Number(activeResult.displacement?.[i*2+1]||0).toExponential(2)}</td><td>{Number(activeResult.stress?.[i]?.[0]||0).toFixed(2)}</td><td>{Number(activeResult.stress?.[i]?.[1]||0).toFixed(2)}</td><td>{Number(activeResult.pore?.[i]||0).toFixed(2)}</td></tr>)}</tbody></table></div></details><details open><summary>Structure forces</summary>{(activeResult.struct_forces||[]).length>0?(activeResult.struct_forces||[]).map((x:Dict,i:number)=><div key={i}><div className="table-row"><b>{x.name}</b><span>N {Number(x.max_N).toPrecision(3)}</span><span>M {Number(x.max_M).toPrecision(3)}</span></div>{forceDiagram(x.stations,'M')}</div>):activeResult.fos>=0?<p className="muted">No structural forces reported for Safety phase (failure mechanism only).</p>:<p className="muted">No active structures in this phase.</p>}</details><details><summary>Interface forces</summary>{(activeResult.interface_forces||[]).map((x:Dict,i:number)=><div className="table-row" key={i}><b>{x.name}</b><span>τ {Number(x.max_abs_tau).toPrecision(3)}</span><span>Slip {Number(x.max_abs_slip).toPrecision(3)}</span></div>)}</details><details open><summary>Engine diagnostics</summary>{(activeResult.diagnostics||[]).length?(activeResult.diagnostics||[]).map((x:Dict,i:number)=><div className="diagnostic" key={i}><b>{x.code} · {x.severity}</b><span>{x.subject}: {x.message}</span></div>):<p className="muted">No engine diagnostics for this phase.</p>}</details></>:tab==='Output'?<LiveMonitorChart job={job} phaseIndex={phase} project={project}/>:selected?.key==='mesh'||(mode==='Mesh'&&(!selected||selected.key==='mesh'||selected.key==='project'))?<><div className="selected-title"><span className="eyebrow">MESH</span><div><b>Mesh settings</b></div></div><div className="fieldscroll"><MeshSettingsEditor project={project} mesh={mesh} onUpdate={mConf=>setProjectSafe({...project,mesh:mConf})} onGenerate={()=>autoMesh()}/></div><div className="property-footer"><span>PLAXIS Auto-Mesher Engine</span><button onClick={reloadSaved}><Undo2 size={13}/> Reload saved</button></div></>:active?<><div className="selected-title"><span className="eyebrow">{selected?.key==='project'?'PROJECT':selected?.key==='initial'?'INITIAL PHASE':selected?.key==='phases'?'CALCULATION PHASE':fmt(selected?.key||'Object').toUpperCase()}</span><div><b>{selected?.key==='initial'?(active.name||'Initial phase'):selected?.key==='phases'?`${(selected.index??0)+1}. ${active.name||`Phase ${(selected.index??0)+1}`}`:(active.name||labels[selected?.key||'']||'Project settings')}</b>{selected?.key!=='project'&&selected?.key!=='initial'&&<button onClick={removeSelected} title="Remove object"><X size={15}/></button>}</div></div><div className="fieldscroll">{selected?.key==='materials'&&active?<SoilMaterialEditor mat={active} onChange={setActive}/>:(selected?.key==='initial'||selected?.key==='phases')&&active?<StagePhaseEditor isInitial={selected.key==='initial'} phase={active} project={project} initialProc={project.initial_procedure} onInitialProcChange={proc=>{setProjectSafe({...project,initial_procedure:proc,initial:{...project.initial,...active}})}} onChange={setActive}/>:renderFields(active,objectFields)}{selected?.key==='polygons'&&active&&<PolygonEdgeEditor poly={active} onChange={setActive}/>}</div><div className="property-footer"><span>All .k2d schema fields</span><button onClick={reloadSaved}> <Undo2 size={13}/> Reload saved</button></div></>:<div className="inspector-empty"><Search size={20}/><span>Select a model object or choose Project properties to edit its data.</span></div>}</aside>
+   <aside className="properties"><div className="pane-title"><span>{tab==='Output'?'CALCULATION RESULTS':'PROPERTIES'}</span><Settings2 size={14}/></div>{tab==='Output'&&activeResult?<>{sectionProfile&&(()=>{const W=240,H=90,pad=4;const {pts,min,max}=sectionProfile;const span=(max-min)||1;const poly=pts.map((p,i)=>`${pad+i/(pts.length-1)*(W-2*pad)},${H-pad-((p.v-min)/span)*(H-2*pad)}`).join(' ');return <div className="section-card" data-testid="cross-section-panel"><div className="section-card-head"><b>Cross section</b><div><button onClick={downloadSection} title="Download CSV">CSV</button><button onClick={()=>{setSectionLine(null);setSectionDraft(null)}} title="Clear"><X size={13}/></button></div></div><div className="section-card-sub">{resultField} · {resultUnit}</div><svg viewBox={`0 0 ${W} ${H}`} className="section-plot" role="img" aria-label="Cross section profile"><polyline points={poly} fill="none" stroke="#dc2626" strokeWidth="1.5"/><line x1={pad} y1={H-pad} x2={W-pad} y2={H-pad} stroke="#cbd5e1"/></svg><div className="section-card-vals"><span>min {min.toPrecision(3)}</span><span>max {max.toPrecision(3)}</span><span>len {sectionProfile.len.toFixed(2)} m</span></div></div>})()}<LiveMonitorChart job={job} phaseIndex={phase} project={project}/><div className="result-summary"><b>{activeResult.name}</b><span className={activeResult.ok?'good':'bad'}>{activeResult.ok?'Converged':'Not converged'}</span><div><small>Maximum displacement</small><strong>{Number(activeResult.max_disp).toPrecision(4)} m</strong></div>{footingReaction!==null&&<div data-testid="footing-reaction" data-kn={footingReaction}><small>Total footing reaction</small><strong>{footingReaction.toFixed(1)} kN</strong></div>}<div><small>Factor of safety</small><strong>{activeResult.fos>=0?`${activeResult.fos_lower_bound?'> ':''}${Number(activeResult.fos).toFixed(3)}`:'—'}</strong></div><div><small>Iterations</small><strong>{activeResult.iterations}</strong></div></div><details><summary>Nodal result table: all nodes</summary><div className="nodetable"><table><thead><tr><th>Node</th><th>x</th><th>y</th><th>ux</th><th>uy</th><th>σxx</th><th>σyy</th><th>p</th></tr></thead><tbody>{activeResult.mesh.x.map((x:number,i:number)=><tr key={i}><td>{i+1}</td><td>{x.toFixed(3)}</td><td>{activeResult.mesh.y[i].toFixed(3)}</td><td>{Number(activeResult.displacement?.[i*2]||0).toExponential(2)}</td><td>{Number(activeResult.displacement?.[i*2+1]||0).toExponential(2)}</td><td>{Number(activeResult.stress?.[i]?.[0]||0).toFixed(2)}</td><td>{Number(activeResult.stress?.[i]?.[1]||0).toFixed(2)}</td><td>{Number(activeResult.pore?.[i]||0).toFixed(2)}</td></tr>)}</tbody></table></div></details><details open><summary>Structure forces</summary>{(activeResult.struct_forces||[]).length>0?(activeResult.struct_forces||[]).map((x:Dict,i:number)=><div key={i}><div className="table-row"><b>{x.name}</b><span>N {Number(x.max_N).toPrecision(3)}</span><span>M {Number(x.max_M).toPrecision(3)}</span></div>{forceDiagram(x.stations,'M')}</div>):activeResult.fos>=0?<p className="muted">No structural forces reported for Safety phase (failure mechanism only).</p>:<p className="muted">No active structures in this phase.</p>}</details><details><summary>Interface forces</summary>{(activeResult.interface_forces||[]).map((x:Dict,i:number)=><div className="table-row" key={i}><b>{x.name}</b><span>τ {Number(x.max_abs_tau).toPrecision(3)}</span><span>Slip {Number(x.max_abs_slip).toPrecision(3)}</span></div>)}</details><details open><summary>Engine diagnostics</summary>{(activeResult.diagnostics||[]).length?(activeResult.diagnostics||[]).map((x:Dict,i:number)=><div className="diagnostic" key={i}><b>{x.code} · {x.severity}</b><span>{x.subject}: {x.message}</span></div>):<p className="muted">No engine diagnostics for this phase.</p>}</details></>:tab==='Output'?<LiveMonitorChart job={job} phaseIndex={phase} project={project}/>:selected?.key==='mesh'||(mode==='Mesh'&&(!selected||selected.key==='mesh'||selected.key==='project'))?<><div className="selected-title"><span className="eyebrow">MESH</span><div><b>Mesh settings</b></div></div><div className="fieldscroll"><MeshSettingsEditor project={project} mesh={mesh} onUpdate={mConf=>setProjectSafe({...project,mesh:mConf})} onGenerate={()=>autoMesh()}/></div><div className="property-footer"><span>PLAXIS Auto-Mesher Engine</span><button onClick={reloadSaved}><Undo2 size={13}/> Reload saved</button></div></>:active?<><div className="selected-title"><span className="eyebrow">{selected?.key==='project'?'PROJECT':selected?.key==='initial'?'INITIAL PHASE':selected?.key==='phases'?'CALCULATION PHASE':fmt(selected?.key||'Object').toUpperCase()}</span><div><b>{selected?.key==='initial'?(active.name||'Initial phase'):selected?.key==='phases'?`${(selected.index??0)+1}. ${active.name||`Phase ${(selected.index??0)+1}`}`:(active.name||labels[selected?.key||'']||'Project settings')}</b>{selected?.key!=='project'&&selected?.key!=='initial'&&<button onClick={removeSelected} title="Remove object"><X size={15}/></button>}</div></div><div className="fieldscroll">{selected?.key==='materials'&&active?<SoilMaterialEditor mat={active} onChange={setActive}/>:(selected?.key==='initial'||selected?.key==='phases')&&active?<StagePhaseEditor isInitial={selected.key==='initial'} phase={active} project={project} initialProc={project.initial_procedure} onInitialProcChange={proc=>{setProjectSafe({...project,initial_procedure:proc,initial:{...project.initial,...active}})}} onChange={setActive}/>:renderFields(active,objectFields)}{selected?.key==='polygons'&&active&&<PolygonEdgeEditor poly={active} onChange={setActive}/>}</div><div className="property-footer"><span>All .k2d schema fields</span><button onClick={reloadSaved}> <Undo2 size={13}/> Reload saved</button></div></>:<div className="inspector-empty"><Search size={20}/><span>Select a model object or choose Project properties to edit its data.</span></div>}</aside>
   </div>
-  <div className="bottom"><div className="bottomhead"><span>MESSAGES</span><div><button disabled={!job} onClick={()=>job&&request(`/api/jobs/${job.id}`).then((x:Dict)=>{setJob(x);setLog(x.log_text)})}>Solver log</button>{job&&['queued','running'].includes(job.status)&&<button onClick={cancel}>Cancel job</button>}</div></div><div className="messages">{validation&&<pre className={validation.ok?'ok':'warn'}>{validation.stdout}{validation.stderr}</pre>}{job&&<pre>{job.status} · {job.message}{log?`\n${log}`:''}</pre>}{!validation&&!job&&<span>{notice}</span>}</div></div>
+  <div className="bottom"><div className="bottomhead"><span>MESSAGES</span><div><button disabled={!job} onClick={()=>job&&request(`/api/jobs/${job.id}`).then((x:Dict)=>{setJob(x);setLog(x.log_text)})}>Solver log</button>{job&&['queued','running'].includes(job.status)&&<button onClick={cancel}>Cancel job</button>}</div></div><div className="messages">{validation&&(validation.issues?.length?<div className="issue-list" data-testid="issue-list"><div className={`issue-head ${validation.ok?'ok':'warn'}`}>{validation.ok?'Validation passed':`${validation.errors||0} error(s), ${validation.warnings||0} warning(s)`} — click an item to go to its field</div>{(validation.issues as Dict[]).map((iss:Dict,i:number)=><button key={i} className={`issue-row issue-${iss.severity}`} onClick={()=>goToIssue(String(iss.path||''))} title={`Go to ${iss.path}`}><span className="issue-sev">{iss.severity==='error'?'✕':'!'}</span><span className="issue-path">{iss.path||'(project)'}</span><span className="issue-msg">{iss.message}</span></button>)}</div>:<pre className={validation.ok?'ok':'warn'}>{validation.ok?'Model satisfies the input contract. Ready to calculate.':''}{validation.stdout}{validation.stderr}</pre>)}{job&&<pre>{job.status} · {job.message}{log?`\n${log}`:''}</pre>}{!validation&&!job&&<span>{notice}</span>}</div></div>
   {validation?.ok===false&&<div className="toast warn-toast"><b>Input contract</b><pre>{validation.stdout}</pre><button onClick={()=>setValidation(null)}><X/></button></div>}
-  {isMeshing && (
-   <div className="meshing-overlay" data-testid="meshing-loader" aria-live="assertive">
+  {job&&['queued','running','cancelling'].includes(job.status)&&(()=>{
+   const sample=job.progress?.samples?.at(-1) as Dict|undefined
+   const started=job.started_at?new Date(job.started_at).getTime():null
+   const elapsed=started?Math.max(0,Math.round((Date.now()-started)/1000)):null
+   const total=(project.phases?.length||0)+1
+   return <div className="modalveil" data-testid="active-tasks" role="dialog" aria-label="Active tasks" aria-busy="true">
+    <div className="active-tasks-modal" onClick={e=>e.stopPropagation()}>
+     <div className="active-tasks-head">
+      <div><b>Active tasks</b><span className="at-sub">{job.status==='queued'?'Waiting for the solver slot':job.status==='cancelling'?'Stopping…':'KATAI solver is running'}</span></div>
+      <button className="at-stop" disabled={job.status==='cancelling'} onClick={cancel}><X size={14}/> Stop</button>
+     </div>
+     <div className="active-tasks-body">
+      <div className="at-row"><span>Phase</span><strong>{sample?.phase_name?`${(Number(sample.phase_index)||0)+1}/${total} · ${sample.phase_name}`:`– / ${total}`}</strong></div>
+      <div className="at-row"><span>Elapsed</span><strong>{elapsed!=null?`${elapsed} s`:'–'}{job.timeout_s?` / ${Math.round(Number(job.timeout_s))} s limit`:''}</strong></div>
+      <div className="at-row"><span>Step · iterations</span><strong>{sample?.step!=null?`${sample.step}`:'–'}{sample?.iterations!=null?` · ${sample.iterations} it`:''}</strong></div>
+      <div className="at-row"><span>Force residual</span><strong>{sample?.residual!=null?Number(sample.residual).toExponential(2):'–'}</strong></div>
+      <div className="at-row"><span>Load factor ΣMstage</span><strong>{sample?.load_factor!=null?Number(sample.load_factor).toFixed(4):'–'}</strong></div>
+      <LiveMonitorChart job={job} phaseIndex={phase} project={project}/>
+      <div className="at-message">{job.message}</div>
+     </div>
+    </div>
+   </div>
+  })()}
+  {busy && (
+   <div className="meshing-overlay busy-overlay" data-testid={busy.kind==='mesh'?'meshing-loader':'busy-overlay'} data-busy-kind={busy.kind} aria-live="assertive" role="alertdialog" aria-busy="true"
+        onPointerDownCapture={e=>e.stopPropagation()} onWheelCapture={e=>e.stopPropagation()} onKeyDownCapture={e=>{e.stopPropagation();e.preventDefault()}} tabIndex={-1}>
     <div className="meshing-modal">
      <div className="meshing-spinner" />
      <div className="meshing-text">
-      <h3>Generating Finite Element Mesh</h3>
-      <p>PLAXIS-style auto-mesher is creating nodes and elements. Please wait...</p>
+      <h3>{busy.label}</h3>
+      <p>Working with the KATAI engine. The workspace is locked until this finishes.</p>
      </div>
     </div>
    </div>
   )}
   {helpOpen&&<div className="modalveil" onClick={()=>setHelpOpen(false)}><div className="helpmodal" onClick={e=>e.stopPropagation()}><button className="modalclose" onClick={()=>setHelpOpen(false)}><X size={17}/></button><div className="brandmark small">K</div><h2>KATAI 2D Workbench</h2><p>PLAXIS-inspired project input and calculation result viewer backed by the KATAI finite-element engine.</p><dl><dt>Input</dt><dd>Build soil regions, structures, mesh settings, groundwater conditions and staged phases.</dd><dt>Canvas</dt><dd>Choose a drawing tool, click coordinates, and double click or select Finish drawing to complete a line or polygon.</dd><dt>Calculate</dt><dd>Validate, mesh and solve through the KATAI CLI. Result files stay with the saved project and are hash checked before loading.</dd><dt>Units</dt><dd>kN, m, day. Refer to the KATAI project schema for field names and enum values.</dd></dl><button className="primary" onClick={()=>setHelpOpen(false)}>Close</button></div></div>}
-  {presetModalOpen&&<div className="modalveil" onClick={()=>setPresetModalOpen(false)}><div className="presetmodal" onClick={e=>e.stopPropagation()}><div className="presetmodal-header"><div><h2>Preset Library & Geotechnical Studies</h2><p>Choose a verified benchmark case or research study to load into the workbench.</p></div><button className="modalclose" aria-label="Close" onClick={()=>setPresetModalOpen(false)}><X size={17}/></button></div><div className="presetmodal-search"><input autoFocus type="text" placeholder="Search by case name, material or keyword..." value={presetSearch} onChange={e=>setPresetSearch(e.target.value)}/><div className="preset-tabs">{['All','Geotechnical Studies','Structural & Tunnel Cases','Corpus Benchmarks'].map(cat=><button key={cat} className={presetCategory===cat?'active':''} onClick={()=>setPresetCategory(cat)}>{cat}</button>)}</div></div><div className="preset-grid">{filteredPresets.map(preset=><div key={preset.filename} className="preset-card"><div className="preset-card-head"><span className="badge">{preset.category}</span>{preset.project.axisymmetric&&<span className="badge badge-axisym">Axisymmetric</span>}</div><h3>{preset.project.name}</h3><div className="preset-card-meta"><span>{preset.project.materials?.[0]?.name||'Soil'}</span><span>•</span><span>{preset.project.polygons?.length||0} region(s)</span><span>•</span><span>{preset.project.initial_procedure===2?'Safety (FoS)':preset.project.axisymmetric?'Axisymmetric (r-z)':'Static / Staged'}</span></div><button className="primary" onClick={()=>{setPresetModalOpen(false);loadExample(preset.project)}}>Load Preset</button></div>)}</div></div></div>}
  </div>
 }
 export default App

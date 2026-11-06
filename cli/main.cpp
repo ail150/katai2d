@@ -57,7 +57,7 @@ int usage() {
                  "  katai solve <file.k2d> [--out <file.res>] [--timings] [--progress <file.json>] [--monitor X,Y]\n"
                  "  katai mesh <file.k2d>\n"
                  "  katai results <file.k2d> <file.res>\n"
-                 "  katai validate <file.k2d>\n"
+                 "  katai validate <file.k2d> [--json]\n"
                  "  katai info\n"
                  "exit codes: 0 ok, 2 usage, 3 file error, 4 input contract refused, "
                  "5 solve failed\n");
@@ -140,7 +140,7 @@ int cmd_mesh(const std::string& path) {
         std::cout << "}\n";
         return 0;
     }
-    const auto generated = katai::app::mesh_from_project(pr);
+    const auto generated = api::mesh_from_project(pr);
     if (!generated.ok) {
         std::fprintf(stderr, "error: mesh generation failed: %s\n", generated.message.c_str());
         return 5;
@@ -361,6 +361,47 @@ int load(const std::string& path, api::Project& pr, std::vector<api::Issue>& not
     return 0;
 }
 
+// One issue as a JSON object. `source` says where it came from: "reader" for the
+// file-reader's forward-version notes, "validator" for the input-contract rules.
+void json_issue(const api::Issue& i, const char* source, bool& first) {
+    if (!first) std::cout << ',';
+    first = false;
+    std::cout << "{\"severity\":\"" << (i.severity == api::Severity::Error ? "error" : "warning")
+              << "\",\"path\":";
+    json_string(i.path);
+    std::cout << ",\"message\":";
+    json_string(i.message);
+    std::cout << ",\"source\":\"" << source << "\"}";
+}
+
+// Structured validation for front ends (plaxis-parity plan Phase 4, Task 4.1).
+// Emits every issue as {severity, path, message, source} so the UI can map a
+// JSON path like "materials[2].Rf" back to the field that owns it. The exit
+// code is the same contract as the text form: 0 ok, 3 file error, 4 refused.
+int cmd_validate_json(const std::string& path) {
+    api::Project pr;
+    std::vector<api::Issue> notes;
+    std::string err;
+    if (!api::load_project(path, pr, &err, &notes)) {
+        std::cout << "{\"ok\":false,\"readable\":false,\"error\":";
+        json_string(err);
+        std::cout << ",\"issues\":[]}\n";
+        return 3;
+    }
+    const api::ValidationReport rep = api::validate_project(pr);
+    const bool ok = rep.ok() && !any_error_note(notes);
+    int errors = rep.errors, warnings = rep.warnings;
+    for (const api::Issue& n : notes)
+        (n.severity == api::Severity::Error ? errors : warnings) += 1;
+    std::cout << "{\"ok\":" << (ok ? "true" : "false") << ",\"readable\":true,\"errors\":" << errors
+              << ",\"warnings\":" << warnings << ",\"issues\":[";
+    bool first = true;
+    for (const api::Issue& n : notes) json_issue(n, "reader", first);
+    for (const api::Issue& i : rep.issues) json_issue(i, "validator", first);
+    std::cout << "]}\n";
+    return ok ? 0 : 4;
+}
+
 int cmd_validate(const std::string& path) {
     api::Project pr;
     std::vector<api::Issue> notes;
@@ -550,7 +591,12 @@ int main(int argc, char** argv) {
     if (argc < 2) return usage();
     const std::string cmd = argv[1];
     if (cmd == "info") return argc == 2 ? cmd_info() : usage();
-    if (cmd == "validate") return argc == 3 ? cmd_validate(argv[2]) : usage();
+    if (cmd == "validate") {
+        if (argc == 3) return cmd_validate(argv[2]);
+        if (argc == 4 && std::strcmp(argv[2], "--json") == 0) return cmd_validate_json(argv[3]);
+        if (argc == 4 && std::strcmp(argv[3], "--json") == 0) return cmd_validate_json(argv[2]);
+        return usage();
+    }
     if (cmd == "mesh") return argc == 3 ? cmd_mesh(argv[2]) : usage();
     if (cmd == "results") return argc == 4 ? cmd_results(argv[2], argv[3]) : usage();
     if (cmd == "solve") {

@@ -200,6 +200,7 @@ katai_add_test(test_design_gui katai::jobs katai::mesh katai::analysis katai::mo
 katai_add_test(test_project_io katai::model katai::io)                # Project file JSON round trip (every field exact + honest failure modes)
 katai_add_test(test_results_io katai::mesh katai::analysis katai::model katai::io)  # Binary result file: bitwise round trip + model-hash staleness + refusal of a corrupt file
 katai_add_test(test_k2d_validator katai::model katai::io)             # .k2d input contract: every rule probed at its exact field path + reader forward-version notes
+katai_add_test(test_explicit_mesh katai::model katai::io katai::jobs katai::mesh)  # KV-GEO-005: the mesh a file carries survives the file -- written, read back, and the mesh the SOLVER used is checked against it (a feature that is documented and inert is worse than one that is absent)
 katai_add_test(test_stratigraphy katai::model)                        # KV-GEO-001: borehole logs -> soil regions + water surface (strata/boreholes, docs/k2d-format.md). A wrong stratigraphy is invisible downstream -- the mesher meshes it, every phase converges on it, and no residual sees it
 # One ctest entry per corpus case. Together they were 1370 s and, once test_phase_numerics had
 # been split, the whole suite's wall clock; they are independent by construction, so this is the
@@ -356,6 +357,8 @@ add_executable(study_circular_footing EXCLUDE_FROM_ALL study_circular_footing.cp
 target_link_libraries(study_circular_footing PRIVATE katai::analysis katai::linsolve)
 add_executable(study_hs_calibration EXCLUDE_FROM_ALL study_hs_calibration.cpp)  # HS alpha, beta calibration
 target_link_libraries(study_hs_calibration PRIVATE katai::materials katai::linsolve)
+add_executable(study_hs_replay EXCLUDE_FROM_ALL study_hs_replay.cpp)  # replays the slowest HS integrations a KATAI_HS_STATS run recorded
+target_link_libraries(study_hs_replay PRIVATE katai::materials katai::linsolve)
 # LBB / inf-sup diagnostic (audit P2b): does equal-order u-p Biot checkerboard under 2D undrained?
 add_executable(study_lbb_undrained EXCLUDE_FROM_ALL study_lbb_undrained.cpp)
 target_link_libraries(study_lbb_undrained PRIVATE katai::mesh katai::analysis katai::geometry katai::linsolve)
@@ -422,6 +425,33 @@ if(Python_Interpreter_FOUND)
   add_test(NAME check_silent_drop
            COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_silent_drop.py)
   set_tests_properties(check_silent_drop PROPERTIES LABELS "hygiene")
+  # check_doc_refs: a reference to a document that does not exist is a broken
+  # promise. The scope is the TRACKED tree -- the repository deliberately keeps
+  # the formulation notes and the working validation records out of version
+  # control, so a reference to one of those names where the derivation is
+  # written down is a pointer, not a broken one, and the gate asks git rather
+  # than the filesystem which is which. Eight source headers pointed at an
+  # ARCHITECTURE.md that did not exist; this is the gate that noticed.
+  add_test(NAME check_doc_refs
+           COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/check_doc_refs.py)
+  set_tests_properties(check_doc_refs PROPERTIES LABELS "hygiene")
+  # plaxis_harness_smoke: the PLAXIS-parity verification harness (Phase 0 of the
+  # plaxis-parity plan) must stay runnable -- it builds a lesson model, solves it
+  # through the katai CLI, extracts the compared quantity and applies the pass
+  # metric. The gate asserts the HARNESS is healthy (it reached a physics verdict
+  # and nothing broke the tool), NOT that every lesson passes: a physics FAIL
+  # (e.g. L1-A's coarse-mesh rigid-footing bias) is a tracked result in
+  # docs/validation/plaxis-parity-report.md, and the full lesson sweep runs under
+  # the `plaxis` label, kept out of the default set because solving is slow.
+  # KATAI_CLI points the harness at the binary this build produced.
+  if(TARGET katai_cli)
+    add_test(NAME plaxis_harness_smoke
+             COMMAND ${Python_EXECUTABLE} ${PROJECT_SOURCE_DIR}/scripts/verification/run_all.py
+                     --only L1 --timeout 120 --gate)
+    set_tests_properties(plaxis_harness_smoke PROPERTIES
+      LABELS "plaxis"
+      ENVIRONMENT "KATAI_CLI=$<TARGET_FILE:katai_cli>")
+  endif()
 else()
   message(STATUS "Python interpreter not found - source-tree gates (language, architecture) disabled")
 endif()

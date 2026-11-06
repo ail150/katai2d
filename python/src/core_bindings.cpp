@@ -582,6 +582,30 @@ NB_MODULE(_core, m) {
         .def_rw("corner_refine", &api::MeshSettings::corner_refine,
                 "refine where geometry lines meet at an angle that is not a multiple of 90 degrees");
 
+    // The mesh a project may CARRY, as opposed to the one it is meshed with. A project
+    // that names a mesh uses that mesh instead of generating one, so a result can be
+    // reproduced on the discretisation it was computed on. The writer emits this block
+    // and the reader reads it back, so the bindings have to be able to set it: without
+    // this class the block is a key no Python code can reach (measured: the schema
+    // coverage gate reported all seven explicit_mesh keys as unreachable).
+    nb::class_<api::Mesh>(m, "Mesh")
+        .def(nb::init<>())
+        .def_rw("x", &api::Mesh::x, "the node x coordinates [m]")
+        .def_rw("y", &api::Mesh::y, "the node y coordinates [m]")
+        .def_rw("connectivity", &api::Mesh::connectivity,
+                "element_count * nodes_per_element node indices, flat")
+        .def_rw("element_material", &api::Mesh::element_material,
+                "the material id of each element")
+        .def_rw("nodes_per_element", &api::Mesh::nodes_per_element)
+        .def_rw("node_count", &api::Mesh::node_count)
+        .def_rw("element_count", &api::Mesh::element_count)
+        .def_rw("bottom_nodes", &api::Mesh::bottom_nodes)
+        .def_rw("top_nodes", &api::Mesh::top_nodes)
+        .def_rw("left_nodes", &api::Mesh::left_nodes)
+        .def_rw("right_nodes", &api::Mesh::right_nodes)
+        .def_rw("boundary_nodes", &api::Mesh::boundary_nodes,
+                "the nodes on the domain boundary");
+
     nb::class_<api::Project>(m, "Project")
         .def(nb::init<>())
         .def_rw("name", &api::Project::name)
@@ -610,7 +634,22 @@ NB_MODULE(_core, m) {
         .def_rw("disps", &api::Project::disps)
         .def_rw("hydros", &api::Project::hydros, "wells and drains (hydraulic conditions)")
         .def_rw("initial", &api::Project::initial)
-        .def_rw("phases", &api::Project::phases);
+        .def_rw("phases", &api::Project::phases)
+        .def_prop_rw("explicit_mesh",
+                     [](const api::Project& p) -> nb::object {
+                         if (!p.explicit_mesh) return nb::none();
+                         return nb::cast(*p.explicit_mesh);
+                     },
+                     [](api::Project& p, nb::object v) {
+                         if (v.is_none()) {
+                             p.explicit_mesh.reset();
+                             return;
+                         }
+                         p.explicit_mesh = nb::cast<api::Mesh>(v);
+                     },
+                     "The mesh this project carries. When it is set the solver runs on THIS "
+                     "mesh instead of generating one, so the file describes the "
+                     "discretisation the answer was computed on. None means 'mesh me'.");
 
     // ------------------------------------------------------------ validation --
     nb::class_<api::Issue>(m, "Issue")
@@ -654,6 +693,24 @@ NB_MODULE(_core, m) {
           "Write a .res results file -- the same writer `katai solve --out` uses. "
           "model_hash = fnv1a64(project_to_json(project)), the staleness stamp every "
           "front end checks before trusting a .res against a project.");
+    m.def("load_results", [](const std::string& path, std::uint64_t model_hash) {
+        std::vector<api::SolveResult> out;
+        std::string err;
+        if (!api::load_results(path, model_hash, out, &err))
+            throw nb::value_error(("cannot read " + path + ": " + err).c_str());
+        return out;
+    }, "path"_a, "model_hash"_a,
+          "Read a .res results file -- the same reader `katai results` uses. "
+          "model_hash = fnv1a64(project_to_json(project)); a file written for a "
+          "different model is refused as stale rather than read as if it fitted.");
+    m.def("mesh_from_project", [](const api::Project& pr) {
+        api::MeshResult r = api::mesh_from_project(pr);
+        if (!r.ok) throw nb::value_error(("mesh generation failed: " + r.message).c_str());
+        return r;
+    }, "project"_a,
+          "Build the mesh the project describes -- the same mesher `katai mesh` uses. "
+          "Returns the mesh with the quality bound it was asked for and whether the "
+          "refinement reached it.");
     // ------------------------------------- checks: liquefaction (TBDY 2018 Annex 16B) --
     m.def("liquefaction_rod_factor", [](double rod_length) {
         bool in_table = true;
@@ -701,15 +758,53 @@ NB_MODULE(_core, m) {
             throw nb::value_error(err.c_str());
         return nb::make_tuple(pr, notes);
     }, "text"_a);
+    // Generate the ground the borehole logs describe. The engine keeps the generator
+    // (pure: it reports what it would do) and the apply (it does it) apart, so a caller
+    // can show the result before committing to it. The Python name is ONE function that
+    // applies and returns the changed project: the pair cannot be half-used from a
+    // script, and the engine keeps the separation for its own callers and its tests.
+    m.def("generate_stratigraphy", [](api::Project pr) {
+        std::string message;
+        if (!api::apply_stratigraphy(pr, &message))
+            throw nb::value_error(message.c_str());
+        return pr;
+    }, "project"_a,
+          "Turn the project's borehole logs into the soil polygons and the phreatic line "
+          "they describe, and return the project with them. Raises ValueError with the "
+          "reason when the logs do not describe a ground (no layers, a log with the wrong "
+          "number of levels, a level that does not increase going down). The regions a "
+          "phase held are CLEARED when the new ground has different regions, and kept when "
+          "it has the same ones -- an excavation that silently moved to another layer is "
+          "worse than one that has to be set again.");
 
     // ----------------------------------------------------------------- results --
     nb::class_<api::MeshResult>(m, "MeshResult")
         .def_ro("ok", &api::MeshResult::ok)
         .def_ro("message", &api::MeshResult::message)
+        .def_ro("quality_met", &api::MeshResult::quality_met,
+                "did the refinement reach the angle bound it was given, or did its step cap "
+                "stop it first? True on every ordinary model; false means the mesh gave up "
+                "being indistinguishable from one that had not.")
+        .def_ro("min_angle_asked", &api::MeshResult::min_angle_asked, "the bound [deg]")
+        .def_ro("corner_elements", &api::MeshResult::corner_elements,
+                "elements below the bound only because they sit in a corner of the geometry "
+                "narrower than it -- a pinched-out layer, a sharp toe")
         .def_prop_ro("node_count", [](const api::MeshResult& r) { return r.mesh.node_count; })
         .def_prop_ro("element_count", [](const api::MeshResult& r) { return r.mesh.element_count; })
+        .def_prop_ro("nodes_per_element", [](const api::MeshResult& r) { return r.mesh.nodes_per_element; })
         .def_prop_ro("x", [](const api::MeshResult& r) { return r.mesh.x; })
-        .def_prop_ro("y", [](const api::MeshResult& r) { return r.mesh.y; });
+        .def_prop_ro("y", [](const api::MeshResult& r) { return r.mesh.y; })
+        .def_prop_ro("connectivity", [](const api::MeshResult& r) { return r.mesh.connectivity; },
+                     "flat connectivity: element e's nodes are "
+                     "connectivity[e*nodes_per_element .. (e+1)*nodes_per_element]")
+        .def_prop_ro("element_material", [](const api::MeshResult& r) { return r.mesh.element_material; },
+                     "material id per element")
+        .def_prop_ro("boundary_nodes", [](const api::MeshResult& r) { return r.mesh.boundary_nodes; },
+                     "the domain-boundary nodes (corner + mid-edge)")
+        .def_prop_ro("bottom_nodes", [](const api::MeshResult& r) { return r.mesh.bottom_nodes; })
+        .def_prop_ro("top_nodes", [](const api::MeshResult& r) { return r.mesh.top_nodes; })
+        .def_prop_ro("left_nodes", [](const api::MeshResult& r) { return r.mesh.left_nodes; })
+        .def_prop_ro("right_nodes", [](const api::MeshResult& r) { return r.mesh.right_nodes; });
 
     // What a run did that its file does not literally say. The severity is the consequence,
     // not the rarity: Warning = the answer stands but the model is not literally the drawn
@@ -997,6 +1092,21 @@ NB_MODULE(_core, m) {
     nb::class_<katai::jobs::PhaseTiming>(m, "PhaseTiming")
         .def_ro("name", &katai::jobs::PhaseTiming::name)
         .def_ro("seconds", &katai::jobs::PhaseTiming::seconds);
+    // One increment of one phase, as the monitor sees it. The same sample the native
+    // CLI writes into its --progress file, so a front end that renders a live graph
+    // and a front end that polls a progress file show the same numbers.
+    nb::class_<katai::jobs::IncrementSample>(m, "IncrementSample")
+        .def_ro("phase_index", &katai::jobs::IncrementSample::phase_index)
+        .def_ro("phase_name", &katai::jobs::IncrementSample::phase_name)
+        .def_ro("increment", &katai::jobs::IncrementSample::increment)
+        .def_ro("load_factor", &katai::jobs::IncrementSample::load_factor)
+        .def_ro("node_index", &katai::jobs::IncrementSample::node_index)
+        .def_ro("x", &katai::jobs::IncrementSample::x)
+        .def_ro("y", &katai::jobs::IncrementSample::y)
+        .def_ro("displacement", &katai::jobs::IncrementSample::displacement)
+        .def_ro("sigma_magnitude", &katai::jobs::IncrementSample::sigma_magnitude)
+        .def_ro("force_error", &katai::jobs::IncrementSample::force_error)
+        .def_ro("iterations", &katai::jobs::IncrementSample::iterations);
 
     nb::class_<api::Job>(m, "Job")
         .def(nb::init<api::Project>(), "project"_a,
@@ -1014,9 +1124,24 @@ NB_MODULE(_core, m) {
         .def("run", [](api::Job& j) {
             const bool ok = j.run();
             j.set_on_phase({});
+            // The increment callback is released for the same reason as the phase
+            // callback above: a C++-held reference to a Python callable is an edge
+            // the garbage collector cannot see, and left in place it closes an
+            // uncollectable cycle.
+            j.set_on_increment({});
             return ok;
         })
         .def("request_cancel", &api::Job::request_cancel)
+        .def("set_monitor_point", &api::Job::set_monitor_point, "x"_a, "y"_a,
+             "Watch one point (x, y) [m] and report its history through the "
+             "increment callback. The same monitor the native CLI's --monitor "
+             "selects.")
+        .def("set_on_increment", &api::Job::set_on_increment, "callback"_a,
+             "callback(sample) fires on every accepted increment, on the solving "
+             "thread. The sample carries the phase, the load factor and the "
+             "monitored point's displacement and stress -- what a live graph is "
+             "drawn from. Like the phase callback, this belongs to the run: it is "
+             "released when run() returns.")
         .def("state", &api::Job::state)
         .def("message", &api::Job::message)
         .def("report", &api::Job::report, nb::rv_policy::reference_internal)

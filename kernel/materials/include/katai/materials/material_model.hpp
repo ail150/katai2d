@@ -1,7 +1,7 @@
 #pragma once
 // Material-point constitutive interface (P1.1) — the nonlinear-analysis core.
 //
-// Design (see docs/ARCHITECTURE + the DOD decision): NO virtual calls (vtable) on the hot
+// Design (see ARCHITECTURE.md + the DOD decision): NO virtual calls (vtable) on the hot
 // path. A material is a tagged flat data structure; integration is a free function
 // (`integrate_point`) that switches on the type — it inlines, is branch-predictor
 // friendly, and can be vectorized later.

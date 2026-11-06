@@ -48,7 +48,13 @@ SCHEMA = REPO / "docs/k2d.schema.json"
 # w-call whose buffer is not named o.
 WRITE_RE = re.compile(r'\bw(?:field|key|arr|phase)\s*\(\s*o\s*,\s*"([^"]+)"')
 # The reader looks keys up through the Json accessors and find().
-READ_RE = re.compile(r'\.(?:num|flag|str|nums|ints|chars)\s*\(\s*"([^"]+)"')
+# The accessor call may be reached by pointer (->num(...)) as well as by reference
+# (.num(...)): the explicit-mesh block, for one, reads every one of its keys through
+# a `const Json*`, so a dot-only pattern reported all six of them as "written but
+# never read back" when the reader does read them all. Both spellings are the same
+# accessor, so the pattern must accept both -- a gate that reports a false
+# "never read back" trains its readers to ignore it.
+READ_RE = re.compile(r'(?:->|\.)\s*(?:num|flag|str|nums|ints|chars)\s*\(\s*"([^"]+)"')
 FIND_RE = re.compile(r'\bfind\s*\(\s*"([^"]+)"')
 # Spec inventory rows: a table line whose first cell is a backtick-quoted key.
 SPEC_ROW_RE = re.compile(r"^\|\s*`([A-Za-z0-9_]+)`\s*\|")

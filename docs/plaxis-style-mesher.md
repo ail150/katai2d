@@ -88,7 +88,8 @@ The background mesh size field $h(\mathbf{x})$ is built from `Distance` and
   - $h(\mathbf{x}) = h_{\min, i}$ for $d(\mathbf{x}) \le d_{\min}$, with
     $d_{\min} = 2.0 \times h_{\min, i}$;
   - $h(\mathbf{x}) = l_e$ for $d(\mathbf{x}) \ge d_{\max}$, with
-    $d_{\max} = 0.20 \times$ the bounding-box diagonal;
+    $d_{\max} = 0.20 \times$ the bounding-box diagonal for a structure or a
+    load, and $0.15 \times$ the diagonal for a thin-layer attractor;
   - a smooth linear or geometric interpolation for
     $d_{\min} < d(\mathbf{x}) < d_{\max}$, keeping the element size growth
     ratio (*mesh gradation*) within $1.15 \le \beta \le 1.3$;

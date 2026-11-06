@@ -29,12 +29,12 @@ if hasattr(_os, "add_dll_directory"):
 from . import _core
 from ._core import (  # noqa: F401 -- the sanctioned vocabulary, re-exported by name
     AnchorMaterial, BCType, DesignApproach, Diagnostic, DiagnosticSeverity, Drainage,
-    EmbeddedBeamMaterial,
-    FlowBCType, GeogridMaterial, InitialProcedure, Issue, Job, JobState, Load,
-    LoadKind, Material, MeshSettings, Phase, PhaseType, PlateMaterial, PrescribedDisp,
-    SeismicWave, Severity, SoilModel, SoilPolygon, StructElement, StructKind,
-    ValidationReport, backend_name, fnv1a64, load_project, project_from_json,
-    project_to_json, save_project, save_results, validate_project,
+    EmbeddedBeamMaterial, FlowBCType, GeogridMaterial, IncrementSample, InitialProcedure,
+    Issue, Job, JobState, Load, LoadKind, Material, MeshResult, MeshSettings, Phase,
+    PhaseType, PlateMaterial, PrescribedDisp, SeismicWave, Severity, SoilModel, SoilPolygon,
+    StructElement, StructKind, ValidationReport, backend_name, fnv1a64, generate_stratigraphy,
+    load_project, load_results, mesh_from_project, project_from_json, project_to_json,
+    save_project, save_results, validate_project,
     PROJECT_FILE_VERSION, RESULTS_FILE_VERSION,
 )
 

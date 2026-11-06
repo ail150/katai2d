@@ -13,7 +13,7 @@ test('verify automatic phase inheritance and safety calculation for cantilever s
     console.log('[PAGE ERROR]:', err.message, err.stack);
   });
 
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

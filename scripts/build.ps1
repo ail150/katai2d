@@ -67,9 +67,10 @@ if ($mklCandidates) {
 # --- Python for the source-tree gates --------------------------------------
 # check_language / check_architecture need a real interpreter. From a bare shell
 # CMake's find_package can land on the WindowsApps store alias, reject it, and
-# silently drop both gates from the test set -- measured: the portable configure
-# registered 115 tests instead of 117. Resolve a real python here and pass it
-# explicitly, so the gate set does not depend on the caller's PATH.
+# silently drop the gate tests from the test set -- measured on 2026-08-02: the
+# portable configure came up short by exactly the number of gate entries. Resolve
+# a real python here and pass it explicitly, so the gate set does not depend on
+# the caller's PATH.
 # Prefer the VERSIONLESS python3 shim: the PyManager install auto-updates and
 # DELETES versioned shims when it does (measured 2026-08-02: python3.12.exe
 # vanished mid-session when the default moved to 3.14; a versioned pin dies with

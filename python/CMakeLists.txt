@@ -67,6 +67,21 @@ foreach(katai_py ${KATAI_PY_SOURCES})
   configure_file(${katai_py} ${CMAKE_BINARY_DIR}/python/katai/${katai_py_name} COPYONLY)
 endforeach()
 
+# The glob above only ever ADDS. A module deleted from the source stays in the staged
+# package -- and the staged package is what the wheel ships, so the wheel carried a
+# module the source no longer had (measured: mesher.py, 29 KB, deleted from the source
+# and still staged). The staged directory is a COPY of the source directory, so it is
+# made to be one: every .py in the staged package that the source no longer has is
+# removed. The glob is re-run at configure time, so the removal happens then.
+file(GLOB KATAI_PY_STALE ${CMAKE_BINARY_DIR}/python/katai/*.py)
+foreach(katai_py ${KATAI_PY_STALE})
+  get_filename_component(katai_py_name ${katai_py} NAME)
+  if(NOT EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/katai/${katai_py_name})
+    message(STATUS "katai: removing staged module no longer in the source: ${katai_py_name}")
+    file(REMOVE ${katai_py})
+  endif()
+endforeach()
+
 # The extension is opaque to IDEs without a stub; nanobind's stubgen derives
 # _core.pyi from the built module (signatures, IntEnum members, docstrings), so
 # completion works in any editor -- part of the easy-to-learn rule. Generated

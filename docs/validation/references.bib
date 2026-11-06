@@ -567,6 +567,11 @@
 }
 
 @misc{thej,
+  title = {the format contract in docs/k2d-format.md ("Explicit mesh object") and the reader's own acceptance rule in kernel/io/include/katai/io/project_io.hpp ("if (m.element_count > 0 && m.x.size() == (size_t)m.node_count) p.explicit_mesh = std::move(m)"). The contract is that a file which carries a mesh keeps it, and that the solver then runs on it.},
+  note  = {cited by KV-GEO-005},
+}
+
+@misc{thek,
   title = {the geogrid element as KATAI 2D defines it, KATAI 2D input contract (docs/k2d-format.md, geogrids: EA / Np / elastoplastic): a flexible elastic or elastoplastic line element representing a grid or sheet of fabric that sustains tension and no compression, whose axial stiffness EA is the axial force F per unit width divided by the axial strain eps = dl/l, so F = EA eps (stated in full)},
   note  = {cited by KV-STR-005},
 }
@@ -576,12 +581,12 @@
   note  = {cited by KV-SLP-004},
 }
 
-@misc{thek,
+@misc{thel,
   title = {the logarithmic compression law of the Soft Soil model, stated in full: e_v = lambda* ln(p'/p'_0) in primary loading and e_v^e = kappa* ln(p'/p'_0) in unloading/reloading, with the tangent bulk modulus K_ur = p'/kappa*; M is not an input but is derived from K0nc so that primary one-dimensional compression reaches that K0nc; KATAI 2D input contract (docs/k2d-format.md, lamstar / kapstar / k0nc_auto). The same equations are verified at the material point and through a hand-built BVP in test_soft_soil},
   note  = {cited by KV-CST-009},
 }
 
-@misc{thel,
+@misc{them,
   title = {the method of consistent deformations (force method) for a statically indeterminate beam with a support settlement, and the linear axial spring of an anchor, both stated in full in the locator; the plate is a Timoshenko beam whose shear rigidity is kGA' = k EA / (2 (1 + nu)) with the rectangular-section shear coefficient k = 5/6, the same expression KV-STR-003 verifies its deflections with},
   note  = {cited by KV-STR-009},
 }
@@ -601,7 +606,7 @@
   note  = {cited by KV-CST-012},
 }
 
-@misc{them,
+@misc{then,
   title = {the principle of superposition for a linear elastic system (each phase of a chain of linear solves is the solve of that phase's change, and the solves add); the KATAI 2D input contract for staged activation (docs/k2d-format.md, phases[i].struct) and for the anchor lock-off force (anchors[i].prestress: applied when the anchor is activated, the anchor behaving as an elastic spring from that state); the prestress equivalence of KV-STR-001 (a constant internal force N0 along the anchor axis is, in the residual, an external force of N0 along that axis at the attached node)},
   note  = {cited by KV-STR-012},
 }
@@ -611,7 +616,7 @@
   note  = {cited by KV-FND-017},
 }
 
-@misc{then,
+@misc{theo,
   title = {the same numerical control applied through two independent routes -- the .k2d file (model::Phase::tolerance / load_steps / max_iterations since io v7, and substep_tolerance since io v15) and the jobs-layer seam (app::NumericalControls, the route KV-NUM-007 measures with) -- must reach the same solver and produce the same run; the controls themselves are the phase-level numerical control parameters of KATAI 2D input contract (docs/k2d-format.md, tol / loadsteps / maxiter / substol), whose per-phase presence in the input is what makes a calculation reproducible by a third party},
   note  = {cited by KV-NUM-008},
 }
@@ -621,12 +626,12 @@
   note  = {cited by KV-NUM-007},
 }
 
-@misc{theo,
+@misc{thep,
   title = {the saturated limit of the fully-coupled (unsaturated Biot + Bishop) formulation is the consolidation (saturated Biot) formulation -- kernel/analysis/coupled_flow_deformation.hpp states the reduction and test_coupled_flow measures it for soil alone; here the same reduction is asked for with a structure in the system. The drained limit is the one KV-STR-006 uses: once the excess pore pressure is gone, the coupled problem IS the drained problem, which solve_nonlinear solves by a different path},
   note  = {cited by KV-STR-008},
 }
 
-@misc{thep,
+@misc{theq,
   title = {the shaft capacity of a cylinder in a cohesive joint, F = 2 pi a H c_i (per radian c_i a H), and the elastic joint's shear force k_s u (2 pi a H); KATAI 2D input contract (docs/k2d-format.md, axisymmetric, structs[i].iface_ks)},
   note  = {cited by KV-STR-016},
 }
@@ -636,7 +641,7 @@
   note  = {cited by KV-CST-008},
 }
 
-@misc{theq,
+@misc{ther,
   title = {the statics and the stiffness of a row of bars: n bars of axial stiffness EA / L share a load F, each stretching F L / (n EA) and carrying F / n (any structural analysis text, e.g. Hibbeler, R.C. Structural Analysis); round a circle of radius r at the spacing Ls there are n = r / Ls per radian},
   note  = {cited by KV-STR-032},
 }

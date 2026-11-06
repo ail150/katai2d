@@ -94,6 +94,54 @@
 .meshing-text h3{margin:0 0 4px 0;font-size:13px;font-weight:700;color:#0f172a}
 .meshing-text p{margin:0;font-size:11px;color:#64748b;line-height:1.4}
 
+/* Active tasks window (PLAXIS-style calculation progress), Phase 2 */
+.active-tasks-modal{position:fixed;right:18px;bottom:18px;z-index:10001;width:380px;max-width:calc(100vw - 36px);background:#ffffff;border:1px solid #cbd5e1;border-radius:8px;box-shadow:0 20px 25px -5px rgba(0,0,0,0.25),0 8px 10px -6px rgba(0,0,0,0.2);overflow:hidden}
+.active-tasks-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:#0f172a;color:#f8fafc}
+.active-tasks-head b{font-size:12px;letter-spacing:.04em}
+.active-tasks-head .at-sub{display:block;font-size:10px;color:#94a3b8;margin-top:2px}
+.active-tasks-head .at-stop{display:inline-flex;align-items:center;gap:4px;background:#dc2626;color:#fff;border:none;border-radius:4px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer}
+.active-tasks-head .at-stop:disabled{background:#64748b;cursor:default}
+.active-tasks-body{padding:12px 14px;display:flex;flex-direction:column;gap:6px}
+.active-tasks-body .at-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;color:#475569}
+.active-tasks-body .at-row strong{color:#0f172a;font-weight:600}
+.active-tasks-body .at-message{font-size:10px;color:#64748b;margin-top:4px;line-height:1.4}
+.busy-overlay{cursor:wait}
+
+/* PLAXIS-style material property tabs (Phase 3) */
+.mat-tabs{display:flex;gap:2px;border-bottom:1px solid #cbd5e1;margin-bottom:10px;flex-wrap:wrap}
+.mat-tab{background:#f1f5f9;border:1px solid #cbd5e1;border-bottom:none;border-radius:4px 4px 0 0;padding:5px 10px;font-size:11px;font-weight:600;color:#475569;cursor:pointer}
+.mat-tab.active{background:#ffffff;color:#1d4ed8;border-color:#93c5fd;position:relative;top:1px}
+
+/* Phase status icons in the Phases explorer (Phase 3) */
+.phase-status{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:3px;font-size:10px;font-weight:700;margin-right:5px;flex:none}
+.phase-status.ps-todo{color:#2563eb;background:#dbeafe}
+.phase-status.ps-running{color:#b45309;background:#fef3c7;animation:meshSpin 1.4s linear infinite}
+.phase-status.ps-ok{color:#15803d;background:#dcfce7}
+.phase-status.ps-warn{color:#b45309;background:#fef3c7}
+.phase-status.ps-fail{color:#b91c1c;background:#fee2e2}
+
+/* Structured validation issue list (Phase 4) */
+.issue-list{display:flex;flex-direction:column;gap:3px;width:100%}
+.issue-head{font-size:11px;font-weight:600;padding:3px 2px;color:#334155}
+.issue-head.ok{color:#15803d}
+.issue-head.warn{color:#b45309}
+.issue-row{display:flex;align-items:baseline;gap:8px;text-align:left;background:#ffffff;border:1px solid #e2e8f0;border-radius:4px;padding:5px 8px;cursor:pointer;font-size:11px;width:100%}
+.issue-row:hover{border-color:#93c5fd;background:#f8fafc}
+.issue-row .issue-sev{flex:none;width:14px;height:14px;display:inline-flex;align-items:center;justify-content:center;border-radius:3px;font-weight:700;font-size:9px}
+.issue-row.issue-error .issue-sev{background:#fee2e2;color:#b91c1c}
+.issue-row.issue-warning .issue-sev{background:#fef3c7;color:#b45309}
+.issue-row .issue-path{flex:none;font-family:ui-monospace,monospace;font-weight:600;color:#1d4ed8}
+.issue-row .issue-msg{color:#475569;line-height:1.3}
+
+/* Cross section panel (Phase 5) */
+.section-card{border:1px solid #e2e8f0;border-radius:6px;padding:8px 10px;margin-bottom:10px;background:#fff}
+.section-card-head{display:flex;align-items:center;justify-content:space-between}
+.section-card-head b{font-size:12px;color:#0f172a}
+.section-card-head button{background:#f1f5f9;border:1px solid #cbd5e1;border-radius:3px;font-size:10px;padding:2px 6px;margin-left:4px;cursor:pointer;color:#334155}
+.section-card-sub{font-size:10px;color:#64748b;margin:2px 0 6px}
+.section-plot{width:100%;height:auto;background:#f8fafc;border-radius:4px}
+.section-card-vals{display:flex;justify-content:space-between;font-size:10px;color:#475569;margin-top:4px}
+
 /* Vector toggle pill matching screenshot */
 .output-vector-pill{margin:4px 0 0;padding:4px 10px;display:flex;align-items:center;justify-content:space-between;border-radius:4px;cursor:pointer;font-size:10px;font-weight:600;transition:all .15s ease}
 .output-vector-pill .pill-badge{font-size:9px;font-weight:700;padding:1px 6px;border-radius:3px}

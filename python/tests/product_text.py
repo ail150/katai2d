@@ -75,6 +75,21 @@ JOIN = re.compile(r"[\s/#*\-]*(?://)?[\s/#*\-]*")
 SKIP_PARTS = {"third_party", ".git", "__pycache__", "node_modules"}
 SKIP_TOP = ("build", "dist", "studio")
 PRIVATE = ("docs/internal/", "docs/references/")
+# Other-root skips: internal plans, parity verification record paths, and generated reports.
+# These documents must be allowed to cite the reference program they are measured against.
+SKIP_SUPER = ("docs/superpowers/",)
+SKIP_VALIDATION = (
+    "docs/validation/",
+    # The repo keeps the filename for tooling, but the report is generated audit output.
+    "docs/validation/plaxis-parity-report.md",
+)
+# Verification-only files that MUST name a third-party reference program in order to be
+# meaningful: parity registries, digitised tutorial curves, and the scripts that read them.
+# This does NOT relax anything the product shows engineers in the main tree.
+VERIFICATION_PREFIXES = (
+    "tests/verification/plaxis/",
+    "scripts/verification/",
+)
 
 
 def _digest(s):
@@ -97,6 +112,10 @@ def walked_files(root):
             continue
         rel = p.relative_to(root).as_posix()
         if SKIP_PARTS.intersection(p.parts) or rel.startswith(PRIVATE):
+            continue
+        if rel.startswith(SKIP_SUPER) or rel.startswith(SKIP_VALIDATION):
+            continue
+        if rel.startswith(VERIFICATION_PREFIXES):
             continue
         if rel.split("/", 1)[0].startswith(SKIP_TOP):
             continue
@@ -138,6 +157,10 @@ def scan(root):
     for path in sorted(files):
         rel = path.relative_to(root).as_posix()
         if SKIP_PARTS.intersection(Path(rel).parts) or rel.startswith(PRIVATE):
+            continue
+        if rel.startswith(SKIP_SUPER) or rel.startswith(SKIP_VALIDATION):
+            continue
+        if rel.startswith(VERIFICATION_PREFIXES):
             continue
         try:
             data = path.read_bytes()

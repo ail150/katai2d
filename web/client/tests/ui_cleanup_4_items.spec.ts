@@ -5,7 +5,7 @@ const artifactDir = 'C:/Users/THIN 15 RYZEN/.gemini/antigravity/brain/1632343d-e
 
 test('verify 4 UI cleanup items: Output explorer icons & scale row, bottom buttons, ribbon mesh controls', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 900 });
-  await page.goto('http://127.0.0.1:5174');
+  await page.goto('http://127.0.0.1:5173');
 
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {

@@ -7,7 +7,7 @@ test('verify PLAXIS style auto-mesher UI and mesh generation', async ({ page }) 
 
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

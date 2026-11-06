@@ -5,8 +5,13 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cmath>
+#include <cstdio>
+#include <cstring>
 #include <mutex>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -370,7 +375,42 @@ HsState hs_return_principal(const HardeningSoilParams& p,
     return both();  // both exceeded
 }
 
-HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
+namespace {
+// KATAI_HS_STATS diagnostics (opt-in, read-only): the number of walks of the current call.
+thread_local int t_hs_walks = 0;
+thread_local int t_hs_answer_met = 0;
+// KATAI_HS_TRACE=1: every walk of every call reports its count, its largest R and where it was
+// taken (for study_hs_replay on one stress point; far too verbose for a run).
+constexpr double kHsAim = 0.81;   // = kAim in hs_integrate (Sloan's 0.9 on the step, squared onto R)
+// KATAI_HS_AGREE=stress: successive walks compare their hardening variables in stress units (study).
+bool hs_agree_in_stress() {
+    static const bool on = [] {
+        const char* e = std::getenv("KATAI_HS_AGREE");
+        return e && (std::string(e) == "stress" || std::string(e) == "double");
+    }();
+    return on;
+}
+// KATAI_HS_AGREE=double: as "stress", and the first refinement of a walk at most doubles the count,
+// so the answer test compares n with 2n before the step law's jump (study).
+bool hs_agree_double() {
+    static const bool on = [] {
+        const char* e = std::getenv("KATAI_HS_AGREE");
+        return e && std::string(e) == "double";
+    }();
+    return on;
+}
+// KATAI_HS_EDGE=1: hold a stress point on the tension cut-off edge through a substep (study).
+bool hs_edge_hold() {
+    static const bool on = [] { const char* e = std::getenv("KATAI_HS_EDGE"); return e && *e == '1'; }();
+    return on;
+}
+bool hs_trace_on() {
+    static const bool on = [] { const char* e = std::getenv("KATAI_HS_TRACE"); return e && *e == '1'; }();
+    return on;
+}
+}  // namespace
+
+static HsIntegrated hs_integrate_impl(const HardeningSoilParams& p_in,
                           const Eigen::Vector3d& sigma_n, double gamma_p_n,
                           double pp_n, const Eigen::Vector3d& dstrain,
                           double stol,
@@ -691,6 +731,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         bool at = false;       // a tension cut-off plane active
         int corner = kFace;    // which part of the hexagon the step flowed on
         int floor_side = 0;    // the side of the stiffness floor the step read (allow bits 16/32)
+        bool edge = false;     // held on the cut-off edge (allow bit 64; see ON THE CUT-OFF EDGE)
         // At a corner, the two principal DIRECTIONS whose stresses are equal (-1: on a face). The
         // corner TYPE only means something relative to the ordering it was found in; the pair is
         // what carries over to a state whose ordering has changed.
@@ -704,6 +745,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                               const Eigen::Vector3d& de_in, int allow = 15) -> Inc {
         Inc r;
         r.floor_side = allow & 48;
+        const bool edge_hold = (allow & 64) && ten_on;
         const Stiff k = stiff_at(s_in);   // the stiffness and strength THIS substep starts from
         const Eigen::Matrix3d& De = k.De;
         r.dsig = De * de_in;
@@ -714,7 +756,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         // past q_a it changes sign, and a trial that far out used to be read as inside.
         const bool as0 = (allow & 1) && fshear_at(sig_tr, gp_in) > 1e-12;
         const bool ac0 = (allow & 2) && cap_on && fcap(sig_tr, pp) > 1e-10 * (1.0 + pp * pp);
-        const bool at0 = (allow & 8) && ten_on && -sig_tr.minCoeff() - ten > 0.0;
+        const bool at0 = ((allow & 8) && ten_on && -sig_tr.minCoeff() - ten > 0.0) || edge_hold;
         if (!as0 && !ac0 && !at0) return r;
         r.plastic = true;
 
@@ -750,6 +792,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
             Eigen::Vector3d dsig; double dgp = 0.0, dev = 0.0;
             Eigen::Matrix3d tangent; bool as = false, ac = false, at = false;
             bool face = false;   // a corner hypothesis solved as its face (the cut-off holds the edge)
+            bool edge = false;   // solved held on the cut-off edge (allow bit 64)
         };
         auto solve = [&](int corner, Sol& sol) {
             bool as = as0, ac = ac0;
@@ -759,6 +802,11 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
             // singular).
             std::array<char, 3> ton{};
             for (int i = 0; i < 3; ++i) ton[i] = at0 && -sig_tr(i) - ten > 0.0;
+            // ON THE CUT-OFF EDGE (allow bit 64, decided by the substep from where it starts): the
+            // two smaller stresses are both at sigma_t and held there, in both evaluations of the
+            // pair, through the edge's own surfaces -- the two cut-off planes, the shear face and
+            // the cap (the pinned edge below, whichever corner hypothesis is being solved).
+            if (edge_hold) { ton[o.b] = ton[o.c] = 1; }
             // A COMPRESSION CORNER WHOSE TWO SMALLER STRESSES ARE BOTH ON THE CUT-OFF is held there by
             // the cut-off: the second shear face and the second cap face only restate it, and with
             // them the system is five surfaces in a three-dimensional stress space -- singular. The
@@ -770,7 +818,8 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
             // solved as the face, which with the two cut-off planes keeps the edge, and it is the face
             // the step reports having flowed on (Sol::face): the pair's second evaluation is held to
             // what the first one did.
-            const bool pinned = corner == kCompression && ton[o.b] && ton[o.c];
+            const bool pinned = (corner == kCompression || edge_hold) && ton[o.b] && ton[o.c];
+            bool pinned_now = edge_hold;   // the edge still held (it may be released as a pair, below)
             sol.face = pinned;
             // The planes a corner hypothesis brings: the face (a, c), and at a corner the second
             // face meeting it.
@@ -897,8 +946,22 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                     if (ac) { if (dl(idx) < 0.0) { ac = false; dropped = true; } ++idx; }
                     if (ac_b) { if (dl(idx) < 0.0) { ac_b = false; dropped = true; } ++idx; }
                 }
-                for (int i = 0; i < 3; ++i)
-                    if (ton[i]) { if (dl(idx) < 0.0) { ton[i] = 0; dropped = true; } ++idx; }
+                {
+                    // The held edge leaves the cut-off only as a pair, when the flow lifts BOTH of its
+                    // stresses (both multipliers negative); one of them alone is the chatter the hold
+                    // is for, and the plane is kept.
+                    double dl_t[3] = {0.0, 0.0, 0.0};
+                    int k_t = idx;
+                    for (int i = 0; i < 3; ++i) if (ton[i]) dl_t[i] = dl(k_t++);
+                    const bool release = edge_hold && pinned_now && dl_t[o.b] < 0.0 && dl_t[o.c] < 0.0;
+                    for (int i = 0; i < 3; ++i)
+                        if (ton[i]) {
+                            const bool held_plane = edge_hold && pinned_now && !release && (i == o.b || i == o.c);
+                            if (dl(idx) < 0.0 && !held_plane) { ton[i] = 0; dropped = true; }
+                            ++idx;
+                        }
+                    if (release) pinned_now = false;
+                }
                 if (dropped) {
                     bool any = false;
                     for (int i = 0; i < nplanes; ++i) any = any || on[i];
@@ -922,6 +985,10 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                 sol.as = as;
                 sol.ac = ac || ac_b;
                 sol.at = ton[0] || ton[1] || ton[2];
+                // On the edge when it was held -- by the substep's own rule (bit 64) or because the
+                // corner found both smaller stresses on the cut-off (pinned) and kept them there: the
+                // pair's second evaluation is then held to the edge too (activated()).
+                sol.edge = (pinned_now || pinned) && ton[o.b] && ton[o.c];
                 return true;
             }
             sol.dsig = De * de_in; sol.tangent = De; sol.as = sol.ac = sol.at = false;
@@ -943,7 +1010,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         Sol sol;
         int corner = kFace;
         solve(kFace, sol);
-        if (allow & 4) {
+        if ((allow & 4) && !sol.edge) {
             const Eigen::Vector3d s1 = s_in + sol.dsig;
             const bool past_c = s1(o.c) > s1(o.b), past_b = s1(o.b) > s1(o.a);
             if (past_c && !past_b) {
@@ -974,6 +1041,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         r.as = sol.as;
         r.ac = sol.ac;
         r.at = sol.at;
+        r.edge = sol.edge;
         if (sol.face) corner = kFace;
         r.corner = corner;
         if (corner == kCompression) { r.tie_i = o.b; r.tie_j = o.c; }
@@ -1047,7 +1115,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
     // it may still drop one (Koiter), as unloading must.
     auto activated = [&](const Inc& k) {
         return (k.as ? 1 : 0) | (k.ac ? 2 : 0) | (k.plastic && k.corner != kFace ? 4 : 0) | (k.at ? 8 : 0) |
-               k.floor_side;
+               k.floor_side | (k.edge && hs_edge_hold() ? 64 : 0);
     };
 
     // --- DRIFT CORRECTION, applied to an ACCEPTED substep ------------------------------------
@@ -1208,6 +1276,27 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
     auto rel_error = [&](const Eigen::Vector3d& d1, const Eigen::Vector3d& d2, const Eigen::Vector3d& s_hat) {
         return 0.5 * (d2 - d1).norm() / std::max(s_hat.norm(), pr / 20.0);
     };
+    // TWO WALKS AGREE (THE ANSWER IS WHAT THE TOLERANCE IS FOR, below) when their stresses do, to
+    // the tolerance in the measure R uses, and so do their hardening variables.
+    const bool stress_measure = hs_agree_in_stress();
+    auto agree = [&](const Eigen::Vector3d& sa, double ga, double ea,
+                     const Eigen::Vector3d& sb, double gb, double eb) {
+        const double scale = std::max(sa.norm(), pr / 20.0);
+        const double lim = kHsAim * tol * scale;
+        if ((sa - sb).norm() > lim) return false;
+        if (!stress_measure)
+            return std::fabs(ga - gb) <= kHsAim * tol * std::max(std::fabs(ga), 1e-12) &&
+                   std::fabs(ea - eb) <= kHsAim * tol * std::max(std::fabs(ea), 1e-12);
+        // KATAI_HS_AGREE=stress: the hardening variables in the SAME measure, the stress their
+        // difference stands for -- the shear surface's deviator moves by dgamma_p / fbar'(q), at
+        // most dgamma_p / (2/E_i - 2/E_ur) (fbar' is smallest at q = 0), and the cap's pressure by
+        // H_cap d eps_v^pc.
+        const Stiff k = stiff_at(sa);
+        const double fbar0 = 2.0 / k.Ei - 2.0 / k.Eur;
+        const double dq = fbar0 > 0.0 ? std::fabs(ga - gb) / fbar0 : 0.0;
+        const double dpc = cap_on ? std::fabs(pc_of(ea) - pc_of(eb)) : 0.0;
+        return dq <= lim && dpc <= lim;
+    };
     // A walk is refined until its largest R is under 0.81 STOL -- Sloan's 0.9 on the step (his
     // Eqn 27), squared onto R -- by at most this many walks.
     constexpr double kAim = 0.81;
@@ -1237,6 +1326,8 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
             const Eigen::Vector3d d2 = stiff_at(sg + d1).De * de_e;
             sg += 0.5 * (d1 + d2);
             r_max = std::max(r_max, rel_error(d1, d2, sg));
+            if (hs_trace_on() && rel_error(d1, d2, sg) > tol)
+                std::fprintf(stderr, "    elastic part R=%.3e alpha=%.4g met=%d\n", rel_error(d1, d2, sg), alpha, met);
             de_p = (1.0 - alpha) * de;
             whole1 = whole2 = nullptr;
         }
@@ -1302,6 +1393,21 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                 for (int i = 0; i < 3; ++i)
                     if (distance(-sg(i) - ten, -(sg + ds_e)(i) - ten) <= near) ++nt_on;
                 nt_on = std::max(nt_on, 1);
+                // ON THE CUT-OFF EDGE: two principal stresses at sigma_t, the shear surface active,
+                // and a trial that pulls further. Held there through the whole pair (allow bit 64).
+                // On it is read in the stress itself: the intermediate stress of a plane-strain shear
+                // hardly moves with the substep, so its distance along the trial is no measure.
+                // The second of the pair is on it too when the substep's own trial carries it there:
+                // the event that would put it on the edge is located only to 1e-3 of its range, and
+                // the stress left just above sigma_t starts the same chatter.
+                if (hs_edge_hold() && (held & 3) && ft1 > ft0) {
+                    int ix[3] = {0, 1, 2};
+                    std::sort(ix, ix + 3, [&](int a, int b) { return sg(a) < sg(b); });
+                    const Eigen::Vector3d tr = sg + ds_e;
+                    if (sg(ix[0]) + ten <= near &&
+                        (sg(ix[1]) + ten <= near || tr(ix[1]) + ten < 0.0))
+                        held |= 64;
+                }
             }
             met = 0;
             if (!held) break;   // inside both: nothing to flow on, and no crossing (see above)
@@ -1420,6 +1526,9 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                 m = std::min(m * std::sqrt(r_piece / (kAim * tol)), 256.0);
             }
             r_max = std::max(r_max, r_piece);
+            if (hs_trace_on() && r_piece > tol)
+                std::fprintf(stderr, "    piece R=%.3e beta=%.4g held=%d m=%.4g from (%.6e %.6e %.6e) to (%.6e %.6e %.6e)\n",
+                             r_piece, beta, held, m, sg_b(0), sg_b(1), sg_b(2), sg(0), sg(1), sg(2));
             de_p = (1.0 - beta) * de_p;
         }
         const Inc k1 = whole1 ? *whole1 : (k1_ready ? k1_held : increment(sg, g, e, de_p));
@@ -1429,6 +1538,18 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         e += 0.5 * (k1.dev + k2.dev);
         // Measured before the drift correction, as Sloan's steps 10 and 13 are ordered.
         r_max = std::max(r_max, rel_error(k1.dsig, k2.dsig, sg));
+        if (hs_trace_on() && rel_error(k1.dsig, k2.dsig, sg) > tol) {
+            const Eigen::Vector3d s_start = sg - 0.5 * (k1.dsig + k2.dsig);
+            std::fprintf(stderr, "    pair R=%.3e alpha_el=%.4g whole=%d from (%.6e %.6e %.6e) de (%.3e %.3e %.3e)\n"
+                                 "      k1 dsig (%.6e %.6e %.6e) pl=%d as=%d ac=%d at=%d fail=%d corner=%d tie=%d,%d\n"
+                                 "      k2 dsig (%.6e %.6e %.6e) pl=%d as=%d ac=%d at=%d fail=%d corner=%d tie=%d,%d\n",
+                         rel_error(k1.dsig, k2.dsig, sg), alpha, whole1 ? 1 : 0, s_start(0), s_start(1), s_start(2),
+                         de_p(0), de_p(1), de_p(2),
+                         k1.dsig(0), k1.dsig(1), k1.dsig(2), k1.plastic, k1.as, k1.ac, k1.at, k1.at_fail, k1.corner,
+                         k1.tie_i, k1.tie_j,
+                         k2.dsig(0), k2.dsig(1), k2.dsig(2), k2.plastic, k2.as, k2.ac, k2.at, k2.at_fail, k2.corner,
+                         k2.tie_i, k2.tie_j);
+        }
         if (k1.plastic || k2.plastic) {
             plastic = true;
             tang = k2.plastic ? k2.tangent : k1.tangent;
@@ -1540,6 +1661,10 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                     fine = l.sig.allFinite() && std::isfinite(l.gp) && std::isfinite(l.ev);
                 }
                 l.ok = fine && done >= 1.0 - 1e-12;
+                if (hs_trace_on())
+                    std::fprintf(stderr, "  lead g=%.4g covered=%.4g walked=%d r_first=%.3e r_rest=%.3e"
+                                         " (tol %.1e) end sig (%.10g %.10g %.10g)\n", g, covered,
+                                 l.walked, l.r_first, l.r_rest, tol, l.sig(0), l.sig(1), l.sig(2));
                 return l;
             };
             // TWO THINGS ARE REFINED, EACH BY ITS OWN ERROR. The first substep leaves the tip itself,
@@ -1587,14 +1712,10 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                 l = lead_walk(g, covered);
                 // Two successive walks that agree to the tolerance have met it (see the uniform
                 // walk below, THE ANSWER IS WHAT THE TOLERANCE IS FOR).
-                if (l.ok && l_prev.ok && l.r_max > kAim * tol) {
-                    const double scale = std::max(l.sig.norm(), pr / 20.0);
-                    if ((l.sig - l_prev.sig).norm() <= kAim * tol * scale &&
-                        std::fabs(l.gp - l_prev.gp) <= kAim * tol * std::max(std::fabs(l.gp), 1e-12) &&
-                        std::fabs(l.ev - l_prev.ev) <= kAim * tol * std::max(std::fabs(l.ev), 1e-12)) {
-                        lead_met = true;
-                        break;
-                    }
+                if (l.ok && l_prev.ok && l.r_max > kAim * tol &&
+                    agree(l.sig, l.gp, l.ev, l_prev.sig, l_prev.gp, l_prev.ev)) {
+                    lead_met = true;
+                    break;
                 }
             }
             if (l.ok) {
@@ -1710,6 +1831,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         double r_max = 0.0;   // the largest local error of the substeps taken
     };
     auto walk = [&](double n) {
+        ++t_hs_walks;
         Walk w;
         w.sig = s0; w.gp = gp0; w.ev = ev0; w.tangent = tangent;
         const double dT_full = 1.0 / n;
@@ -1717,15 +1839,29 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
         // The walk's own count bounds the loop, never the ceiling: a walk planned past the ceiling
         // and stopped at it would return the integral of part of the strain, silently.
         const int planned = (int)std::ceil(n - 1e-9) + 1;
+        int arg = -1;                 // KATAI_HS_TRACE: the substep that set r_max, and its start
+        Eigen::Vector3d arg_sig = w.sig;
+        double arg_gp = 0.0, arg_ev = 0.0;
         for (double T = 0.0; T < 1.0 - 1e-12 && w.taken < planned; ++w.taken) {
             const double dT = std::min(dT_full, 1.0 - T);
             const Eigen::Vector3d de = dT * dstrain_w;
             const bool whole = have_whole && w.taken == 0 && dT == 1.0;
+            const double r_before = w.r_max;
+            const Eigen::Vector3d s_before = w.sig;
+            const double g_before = w.gp, e_before = w.ev;
             substep(w.sig, w.gp, w.ev, de, w.tangent, w.plastic, w.r_max, false,
                     whole ? &whole_k1 : nullptr, whole ? &whole_k2 : nullptr);
+            if (hs_trace_on() && w.r_max > r_before) {
+                arg = w.taken; arg_sig = s_before; arg_gp = g_before; arg_ev = e_before;
+            }
             if (plan_out) ++plan_out->n;
             T += dT;
         }
+        if (hs_trace_on())
+            std::fprintf(stderr, "  walk n=%.6g taken=%d r_max=%.3e (tol %.1e) worst substep %d from"
+                                 " sig (%.10g %.10g %.10g) gp %.6g pc %.6g ; end sig (%.10g %.10g %.10g)\n",
+                         n, w.taken, w.r_max, tol, arg, arg_sig(0), arg_sig(1), arg_sig(2), arg_gp,
+                         pc_of(arg_ev), w.sig(0), w.sig(1), w.sig(2));
         return w;
     };
 
@@ -1741,7 +1877,9 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
                 order = 1.0;   // the error did not fall with the count: refine as for first order
             n_prev = nreal;
             r_prev = w.r_max;
-            nreal = std::min(nreal * std::pow(w.r_max / (kAim * tol), 1.0 / order), (double)kMaxSubsteps);
+            double grow = std::pow(w.r_max / (kAim * tol), 1.0 / order);
+            if (hs_agree_double() && it == 0) grow = std::min(grow, 2.0);   // study: see hs_agree_double
+            nreal = std::min(nreal * grow, (double)kMaxSubsteps);
             const Walk w_prev = w;
             w = walk(nreal);
             // THE ANSWER IS WHAT THE TOLERANCE IS FOR. R bounds the local error of each substep's
@@ -1755,12 +1893,7 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
             // whose answers -- stress and both hardening variables -- agree to the tolerance in the
             // same measure R uses have met it, R notwithstanding, and the finer one is kept.
             if (w.r_max > kAim * tol) {
-                const double scale = std::max(w.sig.norm(), pr / 20.0);
-                const bool same =
-                    (w.sig - w_prev.sig).norm() <= kAim * tol * scale &&
-                    std::fabs(w.gp - w_prev.gp) <= kAim * tol * std::max(std::fabs(w.gp), 1e-12) &&
-                    std::fabs(w.ev - w_prev.ev) <= kAim * tol * std::max(std::fabs(w.ev), 1e-12);
-                if (same) { answer_met = true; break; }
+                if (agree(w.sig, w.gp, w.ev, w_prev.sig, w_prev.gp, w_prev.ev)) { answer_met = true; break; }
             }
         }
     }
@@ -1778,6 +1911,142 @@ HsIntegrated hs_integrate(const HardeningSoilParams& p_in,
     out.plastic = any_plastic;
     out.nsub = w.taken;
     out.saturated = clipped;
+    t_hs_answer_met = answer_met ? 1 : 0;
+    return out;
+}
+
+// --- KATAI_HS_STATS: WHERE THE INTEGRATOR SPENDS ITS TIME ---------------------------------------
+// Opt-in, diagnostic only: the wrapper times every call and aggregates it by the substep count it
+// needed and by the state it started from; the slowest calls are kept with their full input so
+// they can be replayed alone. It changes no number: the integration is the same call. The summary
+// is written to the file KATAI_HS_STATS names (or stderr for "1"), every few seconds while the
+// run lasts (a run stopped by a time cap leaves its last snapshot) and at exit.
+namespace {
+struct HsStats {
+    static constexpr int kBuckets = 9;   // nsub: 1, 2-4, 5-16, 17-64, 65-256, 257-1k, 1k-4k, 4k-10k, >=10k
+    static constexpr int kClasses = 6;   // s3<0, s3<plim, near-apex(q<1e-3 p), plastic, elastic, saturated
+    std::atomic<long long> calls{0}, nsub{0}, walks{0}, sat{0}, met{0}, ns{0};
+    std::atomic<long long> b_calls[kBuckets]{}, b_ns[kBuckets]{};
+    std::atomic<long long> c_calls[kClasses]{}, c_ns[kClasses]{}, c_nsub[kClasses]{};
+    struct Slow {
+        long long ns; int nsub, walks, sat, met;
+        double sig[3], gp, pp, de[3], stol, out[3];
+        double E50, phi, c, m, pref;
+        unsigned char params[sizeof(HardeningSoilParams)];   // the whole parameter set, for a replay
+    };
+    static_assert(std::is_trivially_copyable<HardeningSoilParams>::value,
+                  "KATAI_HS_STATS dumps HardeningSoilParams as bytes for the replay study");
+    std::mutex mu;
+    std::vector<Slow> slow;          // the slowest kKeep, unsorted
+    std::atomic<long long> slow_floor{0};
+    static constexpr size_t kKeep = 40;
+    std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now(), last = t0;
+    std::string path;
+    bool on = false;
+
+    HsStats() {
+        const char* e = std::getenv("KATAI_HS_STATS");
+        if (e && *e && std::string(e) != "0") { on = true; path = (std::string(e) == "1") ? "" : e; }
+    }
+    ~HsStats() { if (on) dump(); }
+    static int bucket(int n) {
+        static const int edges[kBuckets - 1] = {1, 4, 16, 64, 256, 1024, 4096, 9999};
+        for (int i = 0; i < kBuckets - 1; ++i) if (n <= edges[i]) return i;
+        return kBuckets - 1;
+    }
+    void dump() {
+        FILE* f = path.empty() ? stderr : std::fopen(path.c_str(), "w");
+        if (!f) return;
+        const double wall = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+        std::fprintf(f, "HS_STATS wall %.1f s  calls %lld  cpu-in-hs %.2f s  nsub-sum %lld  walks %lld"
+                        "  saturated %lld  answer_met %lld\n", wall, calls.load(), ns.load() * 1e-9,
+                     nsub.load(), walks.load(), sat.load(), met.load());
+        static const char* bn[kBuckets] = {"1", "2-4", "5-16", "17-64", "65-256", "257-1k", "1k-4k",
+                                           "4k-10k", ">=10k"};
+        for (int i = 0; i < kBuckets; ++i)
+            std::fprintf(f, "  nsub %-7s calls %12lld  time %10.3f s\n", bn[i], b_calls[i].load(),
+                         b_ns[i].load() * 1e-9);
+        static const char* cn[kClasses] = {"s3<0", "0<=s3<plim", "near-apex", "plastic", "elastic",
+                                           "saturated"};
+        for (int i = 0; i < kClasses; ++i)
+            std::fprintf(f, "  class %-11s calls %12lld  time %10.3f s  nsub-sum %lld\n", cn[i],
+                         c_calls[i].load(), c_ns[i].load() * 1e-9, c_nsub[i].load());
+        std::lock_guard<std::mutex> lk(mu);
+        std::vector<Slow> s = slow;
+        std::sort(s.begin(), s.end(), [](const Slow& a, const Slow& b) { return a.ns > b.ns; });
+        std::fprintf(f, "slowest calls: ms nsub walks sat met | sig(3) gp pp | de(3) | stol | out(3) |"
+                        " E50 phi c m pref\n");
+        for (const Slow& x : s)
+            std::fprintf(f, "  %.3f %d %d %d %d | %.17g %.17g %.17g %.17g %.17g | %.17g %.17g %.17g |"
+                            " %.3g | %.6g %.6g %.6g | %.6g %.6g %.6g %.6g %.6g\n",
+                         x.ns * 1e-6, x.nsub, x.walks, x.sat, x.met, x.sig[0], x.sig[1], x.sig[2],
+                         x.gp, x.pp, x.de[0], x.de[1], x.de[2], x.stol, x.out[0], x.out[1], x.out[2],
+                         x.E50, x.phi, x.c, x.m, x.pref);
+        // REPLAY lines: the exact input of each slowest call, bit for bit (doubles as %a), and the
+        // parameter set as hex, read by tests/study_hs_replay.cpp.
+        for (const Slow& x : s) {
+            std::fprintf(f, "REPLAY %a %a %a %a %a %a %a %a %a ", x.sig[0], x.sig[1], x.sig[2], x.gp,
+                         x.pp, x.de[0], x.de[1], x.de[2], x.stol);
+            for (size_t i = 0; i < sizeof(x.params); ++i) std::fprintf(f, "%02x", x.params[i]);
+            std::fprintf(f, "\n");
+        }
+        if (f != stderr) std::fclose(f); else std::fflush(f);
+    }
+};
+HsStats& hs_stats() { static HsStats s; return s; }
+}  // namespace
+
+HsIntegrated hs_integrate(const HardeningSoilParams& p,
+                          const Eigen::Vector3d& sigma_n, double gamma_p_n,
+                          double pp_n, const Eigen::Vector3d& dstrain,
+                          double stol,
+                          HsSubstepPlan* plan_out,
+                          const HsSubstepPlan* plan_in) {
+    HsStats& st = hs_stats();
+    if (!st.on) return hs_integrate_impl(p, sigma_n, gamma_p_n, pp_n, dstrain, stol, plan_out, plan_in);
+    t_hs_walks = 0;
+    t_hs_answer_met = 0;
+    const auto a = std::chrono::steady_clock::now();
+    HsIntegrated out = hs_integrate_impl(p, sigma_n, gamma_p_n, pp_n, dstrain, stol, plan_out, plan_in);
+    const long long dt = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - a).count();
+    st.calls += 1; st.ns += dt; st.nsub += out.nsub; st.walks += t_hs_walks;
+    st.sat += out.saturated; st.met += t_hs_answer_met;
+    const int b = HsStats::bucket(out.nsub);
+    st.b_calls[b] += 1; st.b_ns[b] += dt;
+    const double smin = sigma_n.minCoeff(), smax = sigma_n.maxCoeff();
+    const double pm = sigma_n.sum() / 3.0;
+    auto cls = [&](int i) { st.c_calls[i] += 1; st.c_ns[i] += dt; st.c_nsub[i] += out.nsub; };
+    if (smin < 0.0) cls(0);
+    else if (smin < 0.1 * p.p_ref) cls(1);
+    if (smax - smin < 1e-3 * std::max(std::fabs(pm), 1e-9)) cls(2);
+    cls(out.plastic ? 3 : 4);
+    if (out.saturated) cls(5);
+    if (dt > st.slow_floor.load(std::memory_order_relaxed)) {
+        std::lock_guard<std::mutex> lk(st.mu);
+        HsStats::Slow x{};
+        x.ns = dt; x.nsub = out.nsub; x.walks = t_hs_walks; x.sat = out.saturated; x.met = t_hs_answer_met;
+        for (int i = 0; i < 3; ++i) { x.sig[i] = sigma_n(i); x.de[i] = dstrain(i); x.out[i] = out.stress(i); }
+        x.gp = gamma_p_n; x.pp = pp_n; x.stol = stol;
+        x.E50 = p.E50_ref; x.phi = p.friction; x.c = p.cohesion; x.m = p.m; x.pref = p.p_ref;
+        std::memcpy(x.params, &p, sizeof(HardeningSoilParams));
+        if (st.slow.size() < HsStats::kKeep) st.slow.push_back(x);
+        else {
+            auto it = std::min_element(st.slow.begin(), st.slow.end(),
+                                       [](const HsStats::Slow& u, const HsStats::Slow& v) { return u.ns < v.ns; });
+            if (it->ns < dt) *it = x;
+        }
+        if (st.slow.size() == HsStats::kKeep)
+            st.slow_floor = std::min_element(st.slow.begin(), st.slow.end(),
+                                             [](const HsStats::Slow& u, const HsStats::Slow& v) { return u.ns < v.ns; })->ns;
+    }
+    if ((st.calls.load(std::memory_order_relaxed) & 0x3FFF) == 0) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now - st.last > std::chrono::seconds(5)) {
+            std::unique_lock<std::mutex> lk(st.mu, std::try_to_lock);
+            if (lk.owns_lock()) { st.last = now; lk.unlock(); st.dump(); }
+        }
+    }
     return out;
 }
 

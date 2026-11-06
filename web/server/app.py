@@ -24,6 +24,13 @@ CLI = os.environ.get("KATAI_CLI", "katai")
 RAW_TOKENS = os.environ.get("KATAI_ACCESS_TOKEN", "local-development-token,katai-playwright-owner-token")
 TOKENS = [t.strip() for t in RAW_TOKENS.split(",") if t.strip()]
 MAX_UPLOAD = int(os.environ.get("KATAI_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+# Wall-clock cap for a single solve (plaxis-parity plan Phase 2 / decision D9).
+# A phase that exceeds it is stopped; the phases that already finished stay on
+# disk and the job is marked "timeout" with diagnostics. Default 5 minutes;
+# override globally with KATAI_SOLVE_TIMEOUT_S or per job with the request body.
+SOLVE_TIMEOUT_S = float(os.environ.get("KATAI_SOLVE_TIMEOUT_S", "300"))
+# How long to wait for a terminated solver to exit before SIGKILL.
+SOLVE_KILL_GRACE_S = 10.0
 PROJECT_ID = re.compile(r"^[0-9a-f]{32}$")
 app = FastAPI(title="KATAI 2D", docs_url=None, redoc_url=None)
 job_lock = asyncio.Lock()
@@ -47,7 +54,10 @@ def model_path(pid: str) -> Path:
     return project_dir(pid) / "project.k2d"
 
 
-def run_cli(*args: str, timeout: int = 900) -> subprocess.CompletedProcess[str]:
+def run_cli(*args: str, timeout: int = 120) -> subprocess.CompletedProcess[str]:
+    # validate / results / mesh are bounded operations; 120 s is generous for
+    # them. The long-running solve does NOT go through here -- it is a Popen in
+    # the job worker with its own SOLVE_TIMEOUT_S wall-clock cap.
     return subprocess.run([CLI, *args], capture_output=True, text=True, timeout=timeout, check=False)
 
 
@@ -196,25 +206,38 @@ async def export_project(pid: str):
     return FileResponse(path, filename="project.k2d", media_type="application/vnd.katai.project+json")
 
 
-async def cli_report(pid: str, command: str):
+async def validate_report(pid: str):
+    """The input contract as the CLI states it, in both of its forms.
+
+    Structured validation (plaxis-parity Phase 4): `validate --json` returns
+    {ok, errors, warnings, issues:[{severity,path,message,source}]} so the UI
+    can link each issue to the field that owns it. We also run the text form
+    so the Messages pane keeps its human-readable report."""
     path = model_path(pid)
-    if command == "validate":
-        result = await asyncio.to_thread(run_cli, "validate", str(path))
-        return {"ok": result.returncode == 0, "exit_code": result.returncode,
-                "stdout": result.stdout, "stderr": result.stderr}
-    result = await asyncio.to_thread(run_cli, "mesh", str(path))
-    if result.returncode:
-        return JSONResponse({"ok": False, "exit_code": result.returncode,
-                             "stdout": result.stdout, "stderr": result.stderr}, status_code=422)
+    structured = await asyncio.to_thread(run_cli, "validate", "--json", str(path))
+    text = await asyncio.to_thread(run_cli, "validate", str(path))
+    payload: dict[str, Any] = {}
     try:
-        return json.loads(result.stdout)
+        payload = json.loads(structured.stdout)
     except ValueError:
-        raise HTTPException(502, "KATAI CLI returned invalid mesh JSON") from None
+        payload = {}
+    ok = bool(payload.get("ok")) if payload else (structured.returncode == 0)
+    return {
+        "ok": ok,
+        "exit_code": structured.returncode,
+        "errors": payload.get("errors"),
+        "warnings": payload.get("warnings"),
+        "readable": payload.get("readable", True),
+        "issues": payload.get("issues", []),
+        # Human-readable report for the Messages pane (unchanged contract).
+        "stdout": text.stdout,
+        "stderr": text.stderr,
+    }
 
 
 @app.post("/api/projects/{pid}/validate")
 async def validate(pid: str):
-    return await cli_report(pid, "validate")
+    return await validate_report(pid)
 
 
 @app.post("/api/projects/{pid}/mesh")
@@ -326,6 +349,15 @@ async def start_job(pid: str, request: Request):
             print(f"[start_job] Error ensuring PLAXIS mesh: {ex}")
             raise HTTPException(422, f"Failed to generate PLAXIS mesh for calculation: {ex}")
 
+    timeout_s = SOLVE_TIMEOUT_S
+    if isinstance(payload, dict) and payload.get("timeout_s") is not None:
+        try:
+            timeout_s = float(payload["timeout_s"])
+            if isinstance(payload["timeout_s"], bool) or not math.isfinite(timeout_s) or timeout_s <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            raise HTTPException(422, "timeout_s must be a positive number of seconds") from None
+
     monitor = payload.get("monitor") if isinstance(payload, dict) else None
     if monitor is None:
         mx, my = default_monitor(project)
@@ -350,7 +382,7 @@ async def start_job(pid: str, request: Request):
     monitor_payload = {"x": mx, "y": my}
     state = {"id": jid, "project_id": pid, "status": "queued", "created_at": now(),
              "started_at": None, "finished_at": None, "return_code": None, "message": "Waiting for solver",
-             "log": str(folder / f"{jid}.log"), "monitor": monitor_payload}
+             "log": str(folder / f"{jid}.log"), "monitor": monitor_payload, "timeout_s": timeout_s}
     jobs[jid] = state
     persist_job(state)
 
@@ -364,16 +396,33 @@ async def start_job(pid: str, request: Request):
                 return
             state.update(status="running", started_at=now(), message="KATAI solver is running")
             persist_job(state)
+            timed_out = False
             with open(state["log"], "w", encoding="utf-8") as log:
                 proc = subprocess.Popen([CLI, "solve", str(model), "--out", str(folder / f"{jid}.res"),
                                          "--progress", str(progress_path), "--monitor", f"{mx:.17g},{my:.17g}"],
                                         cwd=folder, stdout=log, stderr=subprocess.STDOUT, text=True)
                 processes[jid] = proc
-                rc = await asyncio.to_thread(proc.wait)
+                try:
+                    rc = await asyncio.wait_for(asyncio.to_thread(proc.wait), timeout=timeout_s)
+                except asyncio.TimeoutError:
+                    # Wall-clock cap hit. Stop the solver but keep whatever phases
+                    # it already wrote to the .res; the diagnostics endpoint reads
+                    # the log and progress to say where it was.
+                    timed_out = True
+                    proc.terminate()
+                    try:
+                        rc = await asyncio.to_thread(proc.wait, SOLVE_KILL_GRACE_S)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
+                        rc = await asyncio.to_thread(proc.wait)
             was_cancelled = state["status"] == "cancelling"
-            state.update(status="cancelled" if was_cancelled else "completed" if rc == 0 else "failed",
-                         return_code=rc, finished_at=now(),
-                         message="Calculation cancelled" if was_cancelled else "Calculation completed" if rc == 0 else f"KATAI exited with code {rc}")
+            if timed_out and not was_cancelled:
+                state.update(status="timeout", return_code=rc, finished_at=now(),
+                             message=f"Calculation stopped after the {timeout_s:.0f} s time limit")
+            else:
+                state.update(status="cancelled" if was_cancelled else "completed" if rc == 0 else "failed",
+                             return_code=rc, finished_at=now(),
+                             message="Calculation cancelled" if was_cancelled else "Calculation completed" if rc == 0 else f"KATAI exited with code {rc}")
         except asyncio.CancelledError:
             proc = processes.get(jid)
             if proc and proc.poll() is None:
@@ -421,6 +470,48 @@ async def cancel_job(jid: str):
     state.update(status="cancelling", message="Cancellation requested")
     persist_job(state)
     return {k: v for k, v in state.items() if k != "log"}
+
+
+@app.get("/api/jobs/{jid}/diagnostics")
+async def job_diagnostics(jid: str):
+    """What a stopped (timeout / failed / cancelled) job was doing when it ended.
+
+    Reads the solver log and the progress file -- it does not re-run anything --
+    so a user who hit the 5-minute cap can see the phase, step and convergence it
+    reached and decide how to proceed (coarser mesh, looser tolerance, longer
+    limit). Diagnosing slow solves against the PLAXIS numerical settings is
+    Phase 11 of the plan; this endpoint is the raw material for it.
+    """
+    state = get_job(jid)
+    pid = state["project_id"]
+    folder = ROOT / "projects" / pid
+    log_path = folder / f"{jid}.log"
+    log_tail = ""
+    running_phase = None
+    if log_path.exists():
+        text = log_path.read_text(encoding="utf-8", errors="replace")
+        log_tail = "\n".join(text.splitlines()[-200:])
+        # The CLI prints "phase i/n: <name>" as it starts each phase; the last
+        # such line is the phase that was in progress when the solver stopped.
+        for line in text.splitlines():
+            m = re.match(r"\s*phase\s+(\d+)\s*/\s*(\d+)\s*:\s*(.*)", line)
+            if m:
+                running_phase = {"index": int(m.group(1)), "count": int(m.group(2)), "name": m.group(3).strip()}
+    progress = read_progress(pid, jid, state.get("monitor"))
+    samples = progress.get("samples") or []
+    res_files = sorted(folder.glob("*.res"), key=lambda p: p.stat().st_mtime, reverse=True)
+    return {
+        "id": jid,
+        "status": state["status"],
+        "message": state.get("message"),
+        "return_code": state.get("return_code"),
+        "timeout_s": state.get("timeout_s"),
+        "running_phase": running_phase,
+        "last_sample": samples[-1] if samples else None,
+        "sample_count": len(samples),
+        "has_partial_results": bool(res_files),
+        "log_tail": log_tail,
+    }
 
 
 @app.get("/api/projects/{pid}/results")

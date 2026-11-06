@@ -12,8 +12,8 @@ driven from the command line or from Python.
 Every capability is pinned to a closed-form solution, an independent
 computation path that shares no code with the solver, or a published benchmark
 — **self-consistency does not count as verification** — and the whole record
-ships with the source: **124 declared verification cases**, **26 benchmark
-`.k2d` input files** anyone can rerun, **276 automated tests**.
+ships with the source: **136 declared verification cases**, **26 benchmark
+`.k2d` input files** anyone can rerun, **287 automated tests**.
 
 **Status: pre-release.** The engine and its validation record are under active
 development; interfaces and the file format may still change. What ships in
@@ -33,7 +33,9 @@ generated from the code and pinned to it by the test suite.
 
 ## Install
 
-Current release: **v0.9.0** (`.k2d` format v18).
+Current release: **v0.9.0** (`.k2d` format v18). This tree is **v0.10.0-dev**
+(`.k2d` format v29): it carries fixes that change answers 0.9.0 gave, so a
+build of this tree must not print 0.9.0 on a report.
 Windows x64. Both artifacts are on the
 [Releases](https://github.com/fkkarakurt/katai2d/releases) page.
 
@@ -79,6 +81,8 @@ If a name in this document is missing on your machine, check that number first
 
 | Needs at least | Surface |
 |---|---|
+| 0.10.0-dev | `prj.materials.modified_cam_clay(...)`, `.ngi_adp(...)`, `.jointed_rock(...)` |
+| 0.9.0 | `prj.materials.hoek_brown(...)`; borehole logs as a `.k2d` input (`boreholes[]`, `strata[]`), bound on the raw `katai._core.Project` |
 | 0.8.0 | `prj.structures` (walls, anchors, geogrids, pile rows, interfaces) |
 | 0.8.0 | `katai.summary()`, `katai.extremes()`, bound structural forces |
 | 0.8.0 | `prj.phases.transient_flow(...)`, `.fully_coupled(...)`, `design=`, `water=` |
@@ -181,7 +185,7 @@ checked-in file.
 
 | Namespace | What it makes |
 |---|---|
-| `prj.materials` | `linear_elastic` · `mohr_coulomb` · `hardening_soil` · `hs_small` · `soft_soil` · `soft_soil_creep` · `hoek_brown` |
+| `prj.materials` | `linear_elastic` · `mohr_coulomb` · `hardening_soil` · `hs_small` · `soft_soil` · `soft_soil_creep` · `modified_cam_clay` · `ngi_adp` · `jointed_rock` · `hoek_brown` |
 | `prj.geometry` | `polygon(points, material=…, fix=[…])` · `rectangle(x0, y0, x1, y1, …)` |
 | `prj.water` | `table(y)` · `phreatic_line(points)` |
 | `prj.loads` | `line_load(a, b, qx=, qy=)` · `point_load(at, qx=, qy=)` |
@@ -330,9 +334,15 @@ telling the truth fails the build rather than the first reader who tries it.
 ## The command line
 
 ```
-katai solve <file.k2d> [--out <file.res>] [--timings]   # run the staged analysis (--timings: where each phase's time went)
-katai validate <file.k2d>                   # schema + physics validation, no solve
-katai info                                  # version and file-format information
+katai solve <file.k2d> [--out <file.res>] [--timings] [--progress <file.json>] [--monitor X,Y]
+                                      # run the staged analysis
+                                      # --timings: where each phase's time went
+                                      # --progress: a JSON snapshot per increment, for a live monitor
+                                      # --monitor X,Y: record one node's history through the run
+katai mesh <file.k2d>                 # build the mesh and report it as JSON (quality, nodes, elements)
+katai results <file.k2d> <file.res>   # decode a results file as JSON
+katai validate <file.k2d> [--json]    # schema + physics validation, no solve
+katai info                            # version and file-format information
 ```
 
 Validation never solves, and a solve never proceeds past a refused input: a
@@ -370,8 +380,9 @@ thing to run: every `.k2d` there is a published benchmark the suite pins.
 - **Constitutive models** — Linear Elastic, Mohr–Coulomb with a tension
   cut-off, Hardening Soil, HS-small (with Masing's rule and the Li & Dafalias
   dilatancy below the phase-transformation line), Soft Soil, Soft Soil Creep,
-  Modified Cam-Clay and Hoek–Brown for rock (the 2002 criterion, entered as
-  σci, mi, GSI and the disturbance factor rather than as a c′/φ′ fit); drained,
+  Modified Cam-Clay, NGI-ADP, jointed rock (up to three joint sets, with
+  anisotropic elasticity), and Hoek–Brown for rock (the 2002 criterion, entered
+  as σci, mi, GSI and the disturbance factor rather than as a c′/φ′ fit); drained,
   undrained (A/B/C) and non-porous drainage types.
 - **Elements** — 6- and 15-node triangles, plane-strain and axisymmetric
   (groundwater flow and consolidation included); plates with elastoplastic
@@ -379,7 +390,9 @@ thing to run: every `.k2d` there is a published benchmark the suite pins.
   interfaces, each by its own law in every phase type, consolidation included.
 - **Ground data** — borehole logs (a level per layer boundary and a water head,
   at an x) as the input the layer geometry is generated from, so a reviewer can
-  see the logs a model was drawn from and not only the drawing.
+  see the logs a model was drawn from and not only the drawing. The engine, the
+  `.k2d` format and the `katai._core` binding all carry them; the **DSL and the
+  web UI cannot draw them yet** — write them into the file, or use polygons.
 - **Design codes** — EC7 (EN 1997-1) and TBDY 2018 partial-factor catalogues,
   applied per phase through material factoring.
 
@@ -391,9 +404,14 @@ formulation (KV-STR-008), not the unsaturated regime itself. Use it knowing
 which half of it is pinned to a published solution.
 
 **Not there yet, stated rather than implied:** three-dimensional analysis (this
-is 2D by design), a graphical interface (a separate, in-development track),
-liquefaction models, operating systems other than Windows x64, and
+is 2D by design), the full cyclic liquefaction model (the **triggering** side of
+it — TBDY 2018 Annex 16B — is here, in `katai.liquefaction` and the
+`K2D-*` diagnostics that qualify it), operating systems other than Windows x64
+and Linux (the Linux build and its CI job are here; macOS is not), and
 `pip install katai2d` from PyPI.
+
+The graphical interface is a separate, in-development track: a browser front
+end over the same kernel, in `web/`.
 
 ---
 

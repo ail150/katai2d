@@ -1,9 +1,11 @@
 #pragma once
-// Mesh (minimal) — Phase 0. Splits a rectangle into structured tri6 triangles.
-// The full Delaunay/Ruppert mesher was deferred to Phase 1; this structured mesh
-// suffices to exercise the solver pipeline (assembly→solve→post).
+// The mesh the solver runs on: a triangle mesh in structure-of-arrays form.
 //
-// Data-oriented SoA (see docs/ARCHITECTURE): contiguous arrays, flat connectivity.
+// It is built by the mesher in this module -- constrained Delaunay with Ruppert
+// quality refinement against a sizing field (delaunay.hpp), with the structured
+// triangle fallback kept for the plain-rectangle case.
+//
+// Data-oriented SoA (see ARCHITECTURE.md): contiguous arrays, flat connectivity.
 
 #include <vector>
 

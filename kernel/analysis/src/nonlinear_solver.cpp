@@ -421,6 +421,26 @@ NewtonResult solve_nonlinear_impl(const mesh::Mesh& mesh, const DofMap& dofs,
     double dlam = init_dlam;    // current increment size
     result.converged = true;
 
+    // AUTOMATIC STEP SIZE, AS THE REFERENCE PROGRAM CONTROLS IT (opt-in, KATAI_AUTO_STEPS).
+    // Without it an increment that converges easily is never made larger than the first one:
+    // the load is walked in load_steps equal parts however little each part costs. Measured on
+    // an embankment built undrained on Hardening Soil clay (40 increments of 0.025), every
+    // increment closed in 3-4 iterations and the phase still took minutes -- the cost was the
+    // NUMBER of increments, each a full set of assemblies and factorizations, not their
+    // difficulty. The reference program's global iterative procedure (Reference Manual,
+    // numerical control parameters: desired minimum / maximum number of iterations 6 / 15, max
+    // load fraction per step 0.5) doubles the step after an increment that needed fewer than
+    // the desired minimum and halves it after one that needed more than the desired maximum.
+    // That is what this does. It is OFF by default so that every pinned regression value keeps
+    // its fixed-step path; switched on it changes the load path's discretisation, so a result
+    // obtained with it is accepted only where it agrees with the fixed-step answer within the
+    // phase's own tolerated error (scripts/verification, plaxis-parity Phase 11). A
+    // strength-reduction search keeps its own stepping.
+    const bool auto_steps = std::getenv("KATAI_AUTO_STEPS") != nullptr && !srf_mode;
+    constexpr int kDesiredMinIterations = 6;
+    constexpr int kDesiredMaxIterations = 15;
+    constexpr double kMaxLoadFraction = 0.5;
+
     // The global tangent assembly buffers live ACROSS ITERATIONS: since the COO entry order
     // is deterministic (the assembly loops run over a fixed topology), the CSR pattern is
     // built once and later iterations only accumulate values (build_cached; falls back to a
@@ -1666,7 +1686,15 @@ NewtonResult solve_nonlinear_impl(const mesh::Mesh& mesh, const DofMap& dofs,
                 options.on_increment(result.timings.n_steps, lambda, full, committed,
                                      active_element, best_rnorm / ref, step_iterations);
             }
-            dlam = std::min(init_dlam, dlam * 1.5);  // allow recovery
+            if (auto_steps) {
+                // Desired-iterations control (see AUTOMATIC STEP SIZE above).
+                if (step_iterations < kDesiredMinIterations)
+                    dlam = std::min(kMaxLoadFraction, 2.0 * dlam);
+                else if (step_iterations > kDesiredMaxIterations)
+                    dlam = std::max(min_dlam, 0.5 * dlam);
+            } else {
+                dlam = std::min(init_dlam, dlam * 1.5);  // allow recovery
+            }
         } else if (has_small && !small_freeze &&
                    ended != NewtonResult::Abandonment::SolveRefused) {
             // The same increment again, with the small-strain stiffness read from the best

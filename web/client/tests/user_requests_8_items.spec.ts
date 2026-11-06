@@ -6,8 +6,8 @@ test('Verify all 8 user requested enhancements', async ({ page }) => {
   test.setTimeout(180000);
   await page.setViewportSize({ width: 1440, height: 900 });
 
-  // 1. Load application on port 5174
-  await page.goto('http://127.0.0.1:5174/');
+  // 1. Load application on port 5173
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

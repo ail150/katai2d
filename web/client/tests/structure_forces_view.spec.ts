@@ -13,7 +13,7 @@ test('verify smooth deformed structure, no boundary conditions in output, and st
     console.log('[PAGE ERROR]:', err.message);
   });
 
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

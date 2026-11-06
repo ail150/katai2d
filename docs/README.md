@@ -16,8 +16,10 @@ in one staged-construction workflow, driven from the command line or from Python
 | [validation/verification-matrix.md](validation/verification-matrix.md) | the verification matrix, generated from the reference declarations inside the tests |
 | [validation/references.bib](validation/references.bib) | every primary source the matrix cites, generated alongside it |
 | [diagnostics.md](diagnostics.md) | every `K2D-*` code the engine can raise, what it means and what to do about it |
+| [../ARCHITECTURE.md](../ARCHITECTURE.md) | the architecture: the layers, the data-oriented design, the deferred namespace rename and the exceptions to it |
 | [validation/three-published-benchmarks.md](validation/three-published-benchmarks.md) | three published benchmarks set up from their problem statements and solved with the `katai` CLI, published value beside computed value |
 | [validation/numerical-uncertainty.md](validation/numerical-uncertainty.md) | how far a computed number sits from the exact solution of its own equations, measured rather than asserted |
+| [plaxis-style-mesher.md](plaxis-style-mesher.md) | the specification the web app's gmsh mesher implements — the algorithm, the formulas and the element order |
 
 The spec, the schema and the matrix are pinned to the code by the test suite (`check_k2d_spec`,
 `test_reference_registry`): they cannot drift from what the program actually reads, writes and

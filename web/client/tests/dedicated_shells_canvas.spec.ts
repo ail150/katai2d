@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test('dedicated input and output canvas separation without cross-contamination', async ({ page }) => {
   test.setTimeout(90000);
   // Navigate to application
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
 
   // Auth if needed
   const tokenInput = page.getByPlaceholder('Enter server access token');

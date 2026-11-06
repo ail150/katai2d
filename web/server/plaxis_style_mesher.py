@@ -1,14 +1,17 @@
 """
 Automatic Unstructured Mesh Generator (PLAXIS 2D Style)
 ======================================================
-Modul ini mengimplementasikan generator mesh tidak terstruktur otomatis dengan prinsip
-dan formulasi matematis serupa fitur Auto-Meshing pada PLAXIS 2D:
-- Perhitungan ukuran elemen global (l_e) dari diagonal bounding box & preset kepadatan.
-- Local coarseness factor (f_c) pada struktur, beban, dan zona perkuatan.
-- Deteksi otomatis lapisan tipis (thin layer proximity) menggunakan Shapely.
-- Geometri konformal melalui OpenCASCADE Boolean Fragmentation (gmsh.model.occ.fragment).
-- Background Mesh Size Field bertingkat (Distance + Threshold + Min fields).
-- Algoritma Frontal-Delaunay (Mesh.Algorithm = 6) & elemen Orde-2 (6-node quadratic triangle).
+This module implements an automatic unstructured mesh generator whose principles
+and mathematical formulation follow PLAXIS 2D's Auto-Meshing feature:
+- The global element size (l_e) is computed from the bounding-box diagonal and
+  the density preset.
+- A local coarseness factor (f_c) on structures, loads and reinforcement zones.
+- Automatic detection of thin layers (thin-layer proximity) using Shapely.
+- Conformal geometry through OpenCASCADE Boolean Fragmentation
+  (gmsh.model.occ.fragment).
+- A tiered background mesh size field (Distance + Threshold + Min fields).
+- The Frontal-Delaunay algorithm (Mesh.Algorithm = 6) and 2nd-order elements
+  (6-node quadratic triangle).
 """
 
 from __future__ import annotations
@@ -23,12 +26,12 @@ import gmsh
 class PlaxisStyleMesher:
     """PLAXIS-style Automatic Unstructured Mesh Generator for 2D Geotechnical FEM.
 
-    Mengimplementasikan spesifikasi 'automatic_mesh_generator_plaxis_style.md':
-    - Perhitungan l_e berdasarkan diagonal bounding box dan preset:
+    Implements the specification in docs/plaxis-style-mesher.md:
+    - l_e is computed from the bounding-box diagonal and the preset:
       Very Coarse (2.0), Coarse (1.5), Medium (1.0), Fine (0.7), Very Fine (0.5).
-    - Local coarseness factor f_c (Struktur=0.25, Beban=0.25, Lapisan tipis=d/2).
-    - Boolean fragmentasi OCC untuk geometri konformal tanpa hanging nodes.
-    - Mesh size field berbasis Distance, Threshold, dan Min operator.
+    - Local coarseness factor f_c (Structure=0.25, Load=0.25, Thin layer=d/2).
+    - OCC Boolean fragmentation for conformal geometry without hanging nodes.
+    - A mesh size field built from Distance, Threshold and Min operators.
     - Frontal-Delaunay tri3 / tri6 element generation.
     """
 
@@ -41,10 +44,10 @@ class PlaxisStyleMesher:
     }
 
     def __init__(self, model_name: str = "plaxis_style_mesh"):
-        """Inisialisasi mesher baru.
+        """Create a new mesher.
 
         Args:
-            model_name: Nama model gmsh.
+            model_name: The gmsh model name.
         """
         self.model_name: str = model_name
         self.soil_polygons: List[Dict[str, Any]] = []
@@ -63,16 +66,17 @@ class PlaxisStyleMesher:
         f_c: float = 1.0,
         material_id: int | None = None,
     ) -> int:
-        """Tambahkan poligon kluster/lapisan tanah 2D.
+        """Add a 2D soil cluster/layer polygon.
 
         Args:
-            points: Daftar koordinat titik sudut [(x0, y0), (x1, y1), ...].
-            material_name: Nama material tanah (contoh: 'Soft Clay', 'Dense Sand').
-            f_c: Faktor pengali kerapatan lokal (default 1.0 untuk far-field, 0.8 untuk stratigrafi biasa).
-            material_id: ID integer material tanah (opsional, otomatis jika None).
+            points: The corner coordinates [(x0, y0), (x1, y1), ...].
+            material_name: The soil material name (e.g. 'Soft Clay', 'Dense Sand').
+            f_c: The local density factor (default 1.0 for the far field, 0.8 for
+                ordinary stratigraphy).
+            material_id: The integer soil material id (optional; automatic if None).
 
         Returns:
-            Index poligon yang ditambahkan.
+            The index of the polygon that was added.
         """
         idx = len(self.soil_polygons)
         mat_id = idx if material_id is None else material_id
@@ -80,7 +84,7 @@ class PlaxisStyleMesher:
         if len(pts) >= 2 and np.allclose(pts[0], pts[-1]):
             pts = pts[:-1]
         if len(pts) < 3:
-            raise ValueError(f"Poligon harus memiliki minimal 3 titik sudut, didapat {len(pts)}")
+            raise ValueError(f"A polygon needs at least 3 corner points, got {len(pts)}")
 
         self.soil_polygons.append({
             "id": idx,
@@ -99,24 +103,25 @@ class PlaxisStyleMesher:
         f_c: float = 0.25,
         struct_id: int | None = None,
     ) -> int:
-        """Tambahkan elemen garis struktur 1D (Plate, Sheet Pile, Geogrid, Embedded Beam, Lining).
+        """Add a 1D structural line element (Plate, Sheet Pile, Geogrid, Embedded Beam, Lining).
 
         Args:
-            start_pt: Koordinat awal garis (x, y).
-            end_pt: Koordinat akhir garis (x, y).
-            struct_type: Tipe struktur ('plate', 'sheet_pile', 'geogrid', 'embedded_beam', 'tunnel_lining').
-            f_c: Faktor pengali lokal (default 0.25 untuk mesh rapat di sekitar struktur).
-            struct_id: ID integer struktur (opsional).
+            start_pt: The line's start coordinate (x, y).
+            end_pt: The line's end coordinate (x, y).
+            struct_type: The structure type ('plate', 'sheet_pile', 'geogrid',
+                'embedded_beam', 'tunnel_lining').
+            f_c: The local factor (default 0.25, for a fine mesh around the structure).
+            struct_id: The integer structure id (optional).
 
         Returns:
-            Index garis struktur yang ditambahkan.
+            The index of the structure line that was added.
         """
         idx = len(self.structures)
         s_id = idx if struct_id is None else struct_id
         p1 = (float(start_pt[0]), float(start_pt[1]))
         p2 = (float(end_pt[0]), float(end_pt[1]))
         if math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < 1e-6:
-            raise ValueError("Panjang garis struktur harus lebih besar dari 0.")
+            raise ValueError("A structure line must be longer than 0.")
 
         self.structures.append({
             "id": s_id,
@@ -134,16 +139,16 @@ class PlaxisStyleMesher:
         f_c: float = 0.25,
         load_id: int | None = None,
     ) -> int:
-        """Tambahkan garis beban eksternal (Line Load / Surface Load).
+        """Add an external load line (Line Load / Surface Load).
 
         Args:
-            start_pt: Koordinat awal beban (x, y).
-            end_pt: Koordinat akhir beban (x, y).
-            f_c: Faktor pengali lokal (default 0.25).
-            load_id: ID integer beban (opsional).
+            start_pt: The load's start coordinate (x, y).
+            end_pt: The load's end coordinate (x, y).
+            f_c: The local factor (default 0.25).
+            load_id: The integer load id (optional).
 
         Returns:
-            Index garis beban yang ditambahkan.
+            The index of the load line that was added.
         """
         idx = len(self.loads)
         l_id = idx if load_id is None else load_id
@@ -164,15 +169,15 @@ class PlaxisStyleMesher:
         f_c: float = 0.5,
         zone_id: int | None = None,
     ) -> int:
-        """Tambahkan zona kritis atau kluster perapihan mesh khusus.
+        """Add a critical zone or a dedicated mesh refinement cluster.
 
         Args:
-            polygon_points: Koordinat titik sudut poligon batas zona.
-            f_c: Faktor pengali lokal zona (default 0.5).
-            zone_id: ID integer zona (opsional).
+            polygon_points: The corner coordinates of the zone's boundary polygon.
+            f_c: The zone's local factor (default 0.5).
+            zone_id: The integer zone id (optional).
 
         Returns:
-            Index zona perapihan yang ditambahkan.
+            The index of the refinement zone that was added.
         """
         idx = len(self.refinement_zones)
         z_id = idx if zone_id is None else zone_id
@@ -220,15 +225,17 @@ class PlaxisStyleMesher:
         return xmin, xmax, ymin, ymax, max(1e-3, diag)
 
     def calculate_global_element_size(self, preset: str = "Medium", target_element_size: float | None = None) -> float:
-        """Hitung ukuran elemen target global l_e berdasarkan preset atau ukuran manual:
+        """Compute the global target element size l_e from the preset or a manual size:
         l_e = r_e * 0.05 * sqrt((xmax - xmin)^2 + (ymax - ymin)^2)
 
         Args:
-            preset: Pilihan preset kepadatan: 'Very Coarse', 'Coarse', 'Medium', 'Fine', 'Very Fine'.
-            target_element_size: Ukuran elemen eksplisit dalam meter (opsional, mengabaikan preset jika > 0).
+            preset: The density preset: 'Very Coarse', 'Coarse', 'Medium',
+                'Fine', 'Very Fine'.
+            target_element_size: An explicit element size in metres (optional;
+                it overrides the preset when > 0).
 
         Returns:
-            Nilai l_e (meter).
+            The value of l_e (metres).
         """
         _, _, _, _, diag = self.compute_bounding_box()
         self._diag_bbox = diag
@@ -241,17 +248,18 @@ class PlaxisStyleMesher:
         return self._l_e
 
     def detect_thin_layers(self, l_e: float | None = None) -> List[Dict[str, Any]]:
-        """Deteksi otomatis lapisan tipis (thin layer / proximity detection) menggunakan Shapely.
+        """Detect thin layers automatically (thin-layer / proximity detection) using Shapely.
 
-        Jika jarak terpendek antara dua batas lapisan d_layer < l_e, tandai segmen tersebut
-        sebagai attractor dengan ukuran elemen target h_min = d_layer / 2 (minimal 2 elemen
-        di sepanjang ketebalan lapisan).
+        If the shortest distance between two layer boundaries is d_layer < l_e,
+        that segment is marked as an attractor with the target element size
+        h_min = d_layer / 2 (at least 2 elements across the layer's thickness).
 
         Args:
-            l_e: Ukuran elemen global l_e. Jika None, dihitung otomatis dari preset 'Medium'.
+            l_e: The global element size l_e. If None, it is computed from the
+                'Medium' preset.
 
         Returns:
-            Daftar dict attractor lapisan tipis yang terdeteksi.
+            The list of detected thin-layer attractor dicts.
         """
         if l_e is None:
             l_e = self._l_e if self._l_e > 0 else self.calculate_global_element_size("Medium")
@@ -260,7 +268,7 @@ class PlaxisStyleMesher:
         if len(self.soil_polygons) < 1:
             return self.thin_layer_attractors
 
-        # Bangun shapely geometries untuk setiap poligon tanah
+        # Build the shapely geometry for every soil polygon
         poly_objs: List[Tuple[int, Polygon]] = []
         for poly_dict in self.soil_polygons:
             pts = poly_dict["points"]
@@ -272,7 +280,8 @@ class PlaxisStyleMesher:
                 except Exception:
                     pass
 
-        # 1. Periksa jarak antar segmen batas yang berhadapan dalam poligon yang sama (lapisan tipis / constriction)
+        # 1. Check the distance between facing boundary segments of the SAME polygon
+        #    (a thin layer / a constriction)
         for poly_id, sp_poly in poly_objs:
             coords = list(sp_poly.exterior.coords)
             segments = [LineString([coords[i], coords[i + 1]]) for i in range(len(coords) - 1)]
@@ -280,7 +289,7 @@ class PlaxisStyleMesher:
             for i in range(n_seg):
                 s1 = segments[i]
                 for j in range(i + 2, n_seg):
-                    # Lewati segmen yang bersebelahan
+                    # Skip the segments that share an endpoint
                     if i == 0 and j == n_seg - 1:
                         continue
                     s2 = segments[j]
@@ -296,7 +305,7 @@ class PlaxisStyleMesher:
                             "seg2": list(s2.coords),
                         })
 
-        # 2. Periksa jarak antar poligon yang berdekatan (inter-polygon proximity)
+        # 2. Check the distance between NEIGHBOURING polygons (inter-polygon proximity)
         for i in range(len(poly_objs)):
             id1, p1 = poly_objs[i]
             for j in range(i + 1, len(poly_objs)):
@@ -322,33 +331,37 @@ class PlaxisStyleMesher:
         show_gui: bool = False,
         target_element_size: float | None = None,
     ) -> Dict[str, Any]:
-        """Eksekusi proses auto-meshing PLAXIS-style:
-        1. Hitung ukuran elemen global l_e.
-        2. Jalankan deteksi lapisan tipis (thin layer).
-        3. Bangun geometri konformal menggunakan OpenCASCADE Boolean Fragment.
-        4. Konstruksi Background Mesh Size Field (Distance + Threshold + Min).
-        5. Eksekusi Frontal-Delaunay meshing & orde elemen (order 1 atau order 2).
-        6. Ekspor seluruh data mesh (Nodes, Elemen 2D, Elemen Struktur 1D).
+        """Run the PLAXIS-style automatic meshing process:
+        1. Compute the global element size l_e.
+        2. Run the thin-layer detection.
+        3. Build the conformal geometry with an OpenCASCADE Boolean Fragment.
+        4. Construct the background mesh size field (Distance + Threshold + Min).
+        5. Run Frontal-Delaunay meshing at the requested element order
+           (1, 2 or 15).
+        6. Export all the mesh data (nodes, 2D elements, 1D structure elements).
 
         Args:
-            preset: Pilihan preset kepadatan: 'Very Coarse', 'Coarse', 'Medium', 'Fine', 'Very Fine'.
-            element_order: Orde elemen: 1 (Tri3 / 3-node linear) atau 2 (Tri6 / 6-node quadratic) atau 15 (Tri15 / 15-node quartic).
-            show_gui: Apakah akan meluncurkan antarmuka GUI Gmsh bawaan (default False).
-            target_element_size: Ukuran elemen target eksplisit dalam meter (opsional).
+            preset: The density preset: 'Very Coarse', 'Coarse', 'Medium',
+                'Fine', 'Very Fine'.
+            element_order: The element order: 1 (Tri3 / 3-node linear),
+                2 (Tri6 / 6-node quadratic) or 15 (Tri15 / 15-node quartic).
+            show_gui: Whether to open Gmsh's own GUI (default False).
+            target_element_size: An explicit target element size in metres
+                (optional).
 
         Returns:
-            Dictionary data mesh hasil generate.
+            The generated mesh data as a dictionary.
         """
         l_e = self.calculate_global_element_size(preset, target_element_size=target_element_size)
         self.detect_thin_layers(l_e)
 
-        # Inisialisasi Gmsh
+        # Initialise Gmsh
         if not gmsh.isInitialized():
             gmsh.initialize(interruptible=False)
         gmsh.clear()
         gmsh.model.add(self.model_name)
 
-        # 1. Tambahkan seluruh poligon tanah ke OpenCASCADE
+        # 1. Add every soil polygon to OpenCASCADE
         occ_surfaces: List[Tuple[int, int]] = []
         poly_to_occ_surf: Dict[int, int] = {}
 
@@ -370,7 +383,7 @@ class PlaxisStyleMesher:
             occ_surfaces.append((2, surf_tag))
             poly_to_occ_surf[p_idx] = surf_tag
 
-        # 2. Tambahkan garis struktur ke OpenCASCADE
+        # 2. Add the structure lines to OpenCASCADE
         occ_struct_lines: List[Tuple[int, int]] = []
         for s_data in self.structures:
             pt1 = gmsh.model.occ.addPoint(s_data["start"][0], s_data["start"][1], 0.0)
@@ -378,7 +391,7 @@ class PlaxisStyleMesher:
             ltag = gmsh.model.occ.addLine(pt1, pt2)
             occ_struct_lines.append((1, ltag))
 
-        # 3. Tambahkan garis beban ke OpenCASCADE
+        # 3. Add the load lines to OpenCASCADE
         occ_load_lines: List[Tuple[int, int]] = []
         for ld_data in self.loads:
             pt1 = gmsh.model.occ.addPoint(ld_data["start"][0], ld_data["start"][1], 0.0)
@@ -401,8 +414,8 @@ class PlaxisStyleMesher:
 
         # Pemetaan balik:
         # out_map memetakan entitas input ke entitas hasil pecahan (fragmented)
-        # Indeks 0 .. len(occ_surfaces)-1 adalah poligon tanah
-        # Indeks berikutnya adalah struktur, lalu beban
+        # Indices 0 .. len(occ_surfaces)-1 are the soil polygons
+        # The next indices are the structures, then the loads
         frag_surf_to_poly: Dict[int, int] = {}
         for p_idx in range(len(occ_surfaces)):
             if p_idx < len(out_map):
@@ -410,7 +423,7 @@ class PlaxisStyleMesher:
                     if dim == 2:
                         frag_surf_to_poly[tag] = p_idx
 
-        # Pemetaan struktur ke kurva 1D
+        # Map the structures onto the 1D curves
         struct_curves: List[int] = []
         frag_curve_to_struct: Dict[int, int] = {}
         offset_struct = len(occ_surfaces)
@@ -422,7 +435,7 @@ class PlaxisStyleMesher:
                         struct_curves.append(tag)
                         frag_curve_to_struct[tag] = s_idx
 
-        # Pemetaan beban ke kurva 1D
+        # Map the loads onto the 1D curves
         load_curves: List[int] = []
         frag_curve_to_load: Dict[int, int] = {}
         offset_load = offset_struct + len(occ_struct_lines)
@@ -476,14 +489,14 @@ class PlaxisStyleMesher:
 
         # c. Thin layer attractors (h_min = d_layer / 2)
         if self.thin_layer_attractors:
-            # Ambil nilai h_min terkecil dari lapisan tipis
+            # Take the smallest h_min of the thin layers
             min_thin_h = min(att["h_min"] for att in self.thin_layer_attractors)
-            # Cari kurva-kurva pembatas dari poligon lapisan tipis
+            # Find the boundary curves of the thin-layer polygon
             thin_curves: List[int] = []
             for att in self.thin_layer_attractors:
                 p_id = att.get("poly_id")
                 if p_id is not None:
-                    # Temukan kurva pada surface poligon ini
+                    # Find the curves on this polygon surface
                     for stag, parent_pid in frag_surf_to_poly.items():
                         if parent_pid == p_id:
                             boundaries = gmsh.model.getBoundary([(2, stag)], combined=False, oriented=False)
@@ -549,7 +562,7 @@ class PlaxisStyleMesher:
         nodes_xy = np.array(coords).reshape(-1, 3)[:, :2]
         tag_to_idx = {tag: i for i, tag in enumerate(node_tags)}
 
-        # Kumpulkan seluruh elemen segitiga 2D
+        # Collect all the 2D triangle elements
         if element_order in (4, 15):
             target_elem_type = 23  # Triangle 15 (Quartic 15-node)
             nodes_per_elem = 15
@@ -580,7 +593,7 @@ class PlaxisStyleMesher:
                         all_conn.append(elem_conn)
                         all_materials.append(mat_id)
 
-        # Kumpulkan seluruh elemen garis 1D untuk struktur
+        # Collect all the 1D line elements for the structures
         struct_1d_elems: List[Dict[str, Any]] = []
         for ctag, s_idx in frag_curve_to_struct.items():
             s_data = self.structures[s_idx]
@@ -595,7 +608,7 @@ class PlaxisStyleMesher:
                         "connectivity": l_conn,
                     })
 
-        # Identifikasi Boundary Nodes (kurva yang hanya berbatasan dengan 1 surface)
+        # Identify the boundary nodes (curves bounded by only 1 surface)
         boundary_nodes_set = set()
         for dim, ctag in gmsh.model.getEntities(1):
             adj_surfs, _ = gmsh.model.getAdjacencies(1, ctag)
@@ -638,35 +651,35 @@ class PlaxisStyleMesher:
         }
 
     def export_mesh_data(self) -> Dict[str, Any]:
-        """Kembalikan data mesh yang telah di-generate dalam bentuk dictionary.
+        """Return the generated mesh data as a dictionary.
 
         Returns:
-            Dictionary berisi:
-            - 'nodes': np.ndarray shape (N, 2) koordinat (x, y)
-            - 'soil_elements': np.ndarray shape (E, npe) konektivitas elemen segitiga
-            - 'element_material': np.ndarray shape (E,) ID material setiap elemen tanah
-            - 'structure_elements': list dict elemen struktur 1D
-            - 'boundary_nodes': np.ndarray node IDs di batas luar domain
-            - 'katai_mesh': dict standar yang dapat langsung disajikan ke frontend / solver KATAI
+            A dictionary holding:
+            - 'nodes': np.ndarray shape (N, 2), the (x, y) coordinates
+            - 'soil_elements': np.ndarray shape (E, npe), the triangle connectivity
+            - 'element_material': np.ndarray shape (E,), the material id of each soil element
+            - 'structure_elements': a list of 1D structure element dicts
+            - 'boundary_nodes': np.ndarray, the node ids on the outer domain boundary
+            - 'katai_mesh': the standard dict the KATAI frontend / solver can take as is
         """
         if self.mesh_data is None:
-            raise RuntimeError("Mesh belum di-generate. Panggil generate_mesh() terlebih dahulu.")
+            raise RuntimeError("No mesh has been generated yet. Call generate_mesh() first.")
         return self.mesh_data
 
     @classmethod
     def from_project(cls, project_data: Dict[str, Any], model_name: str = "project_mesh") -> "PlaxisStyleMesher":
-        """Instansiasi mesher langsung dari dictionary objek project .k2d.
+        """Build a mesher directly from a .k2d project's dict.
 
         Args:
-            project_data: Dictionary schema KATAI .k2d.
-            model_name: Nama model gmsh.
+            project_data: A KATAI .k2d schema dict.
+            model_name: The gmsh model name.
 
         Returns:
-            Objek PlaxisStyleMesher yang siap di-generate.
+            A PlaxisStyleMesher ready to generate.
         """
         mesher = cls(model_name=model_name)
 
-        # 1. Tambahkan poligon tanah
+        # 1. Add the soil polygons
         polys = project_data.get("polygons") or []
         materials = project_data.get("materials") or []
         for i, p in enumerate(polys):
@@ -679,7 +692,7 @@ class PlaxisStyleMesher:
                 fc = float(p.get("coarseness", 1.0))
                 mesher.add_soil_polygon(pts, material_name=mat_name, f_c=fc, material_id=mat_idx)
 
-        # 2. Tambahkan struktur
+        # 2. Add the structures
         structs = project_data.get("structs") or []
         kind_names = {0: "plate", 1: "anchor", 2: "geogrid", 3: "embedded_beam", 4: "interface"}
         for s in structs:
@@ -691,7 +704,7 @@ class PlaxisStyleMesher:
                 fc = float(s.get("coarseness", 0.25))
                 mesher.add_structure_line([x1, y1], [x2, y2], struct_type=stype, f_c=fc, struct_id=s.get("id"))
 
-        # 3. Tambahkan beban
+        # 3. Add the loads
         loads = project_data.get("loads") or []
         for ld in loads:
             x1, y1 = ld.get("x1"), ld.get("y1")

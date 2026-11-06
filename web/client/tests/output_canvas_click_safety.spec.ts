@@ -7,7 +7,7 @@ test('Verify output canvas mouse clicks and drags do not wipe results or cause s
   await page.setViewportSize({ width: 1440, height: 900 });
 
   // 1. Open app
-  await page.goto('http://127.0.0.1:5174/');
+  await page.goto('http://127.0.0.1:5173/');
   const tokenInput = page.getByPlaceholder('Enter server access token');
   if (await tokenInput.isVisible({ timeout: 2000 }).catch(() => false)) {
     await tokenInput.fill(ownerToken);

@@ -27,9 +27,10 @@ const entityButtons: Record<string, string> = {
   structs: 'Structures', plates: 'Plate materials', anchors: 'Anchor materials', geogrids: 'Geogrid materials', embedded: 'Embedded beam materials',
   loads: 'Loads', disps: 'Prescribed displacements', hydros: 'Wells and drains', phases: 'Calculation phases',
 }
+// CAD toolbar button titles in the current UI (App.tsx cad-toolbar).
 const toolFor: Record<string, string> = {
-  polygons: 'Soil polygon', structs: 'Structure line', loads: 'Distributed load',
-  disps: 'Prescribed displacement', hydros: 'Well / drain',
+  polygons: 'Toolbar: Soil Region', structs: 'Toolbar: Plate Structure', loads: 'Toolbar: Surface Load',
+  disps: 'Toolbar: Prescribed Disp', hydros: 'Toolbar: Water Drain/Well',
 }
 
 function labelFor(key: string) {
@@ -127,7 +128,6 @@ async function rebuild(page: Page, model: Dict) {
   ))
   await setFields(page, projectFields)
   await page.getByRole('button', { name: 'Mesh', exact: true }).click()
-  await page.getByRole('button', { name: 'Edit mesh settings' }).click()
   await setFields(page, model.mesh)
   const snap = page.getByTitle('Snap')
   if ((await snap.getAttribute('class') || '').includes('selected')) await snap.click()
@@ -141,7 +141,7 @@ async function rebuild(page: Page, model: Dict) {
   }
   if (model.has_water && model.wx?.length >= 2) {
     await page.getByRole('button', { name: 'Flow Conditions', exact: true }).click()
-    await page.getByTitle('Water line').click()
+    await page.getByTitle('Phreatic Water Line').click()
     for (let i = 0; i < model.wx.length; i++) await setDomainPoint(page, model.wx[i], model.wy[i], model, [0, 0])
     await page.getByRole('button', { name: 'Finish drawing' }).click()
     await page.locator('.projectlabel').click()
@@ -151,7 +151,7 @@ async function rebuild(page: Page, model: Dict) {
   for (let i = 0; i < (model.boreholes || []).length; i++) {
     const borehole = model.boreholes[i]
     await page.getByRole('button', { name: 'Soil', exact: true }).click()
-    await page.getByTitle('Borehole').click()
+    await page.getByTitle('Toolbar: Stratum Borehole').click()
     await setDomainPoint(page, borehole.x, borehole.level, model, [0, 0])
     await setFields(page, borehole)
   }
@@ -201,7 +201,7 @@ test('all corpus models can be rebuilt from canvas and edited in the workbench',
 
     await page.getByTitle('Validate').click()
     await expect(page.locator('.messages pre.ok')).toContainText('satisfies the input contract', { timeout: 30_000 })
-    await page.locator('.bottomhead').getByRole('button', { name: 'Generate mesh' }).click()
+    await page.getByTitle('Generate Mesh using PLAXIS Auto-Mesher').click()
     await expect(page.locator('.statusbar')).toContainText(new RegExp(`Mesh ready · \\d+ nodes · \\d+ elements · Tri${model.mesh.order}`), { timeout: 90_000 })
     const jobResponsePromise = page.waitForResponse(response =>
       response.request().method() === 'POST' && new URL(response.url()).pathname === `/api/projects/${id}/jobs`,

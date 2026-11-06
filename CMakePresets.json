@@ -17,6 +17,17 @@
       }
     },
     {
+      "name": "ubuntu-24.04-mkl",
+      "displayName": "Ubuntu 24.04 -- GCC + PARDISO (Debian libmkl-dev)",
+      "description": "The ubuntu-24.04 build on the PARDISO backend, using the distro MKL through the cmake/mkl-debian shim (libmkl-dev ships no oneAPI CMake config). Results must match ubuntu-24.04 (Eigen) to solver round-off; only the run time may differ. Install MKL with scripts/verification/install_mkl.sh.",
+      "inherits": "ubuntu-24.04",
+      "binaryDir": "${sourceDir}/build/ubuntu-24.04-mkl",
+      "cacheVariables": {
+        "KATAI_WITH_MKL": "ON",
+        "MKL_DIR": "${sourceDir}/cmake/mkl-debian"
+      }
+    },
+    {
       "name": "msvc-rwdi",
       "displayName": "MSVC RelWithDebInfo (Ninja)",
       "generator": "Ninja",
@@ -78,6 +89,7 @@
   ],
   "buildPresets": [
     { "name": "ubuntu-24.04", "configurePreset": "ubuntu-24.04" },
+    { "name": "ubuntu-24.04-mkl", "configurePreset": "ubuntu-24.04-mkl" },
     { "name": "msvc-rwdi",  "configurePreset": "msvc-rwdi" },
     { "name": "msvc-debug", "configurePreset": "msvc-debug" },
     { "name": "portable",   "configurePreset": "portable" },
